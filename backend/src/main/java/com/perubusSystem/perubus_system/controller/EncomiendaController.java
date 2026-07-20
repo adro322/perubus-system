@@ -63,4 +63,10 @@ public class EncomiendaController {
 
         return ResponseEntity.ok(encomiendaGuardada);
     }
+
+    // Para ver el historial de encomiendas
+    @GetMapping
+    public ResponseEntity<?> listarEncomiendas() {
+        return ResponseEntity.ok(encomiendaRepository.findAll());
+    }
 }

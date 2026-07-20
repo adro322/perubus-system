@@ -29,4 +29,11 @@ public class UsuarioController {
             return ResponseEntity.status(401).body("Usuario o contraseña incorrectos");
         }
     }
+
+    @PostMapping("/registrar")
+    public ResponseEntity<?> registrarUsuario(@RequestBody Usuario nuevoUsuario) {
+        nuevoUsuario.setEstado(true); // Activo por defecto
+        Usuario usuarioGuardado = usuarioRepository.save(nuevoUsuario);
+        return ResponseEntity.ok(usuarioGuardado);
+    }
 }
