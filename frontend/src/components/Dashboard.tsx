@@ -14,6 +14,7 @@ export default function Dashboard() {
   // Estados Encomienda
   const [dniBuscado, setDniBuscado] = useState('');
   const [clienteEncontrado, setClienteEncontrado] = useState<any>(null);
+  const [errorBusqueda, setErrorBusqueda] = useState('');
   const [peso, setPeso] = useState('');
   const [destino, setDestino] = useState('');
   const [tarifa, setTarifa] = useState<number | null>(null);
@@ -40,18 +41,22 @@ export default function Dashboard() {
   };
 
   const buscarCliente = async () => {
-    if (!dniBuscado) return alert("Ingrese un DNI para buscar");
+    setErrorBusqueda(''); // Limpia errores anteriores
+    if (!dniBuscado) {
+      setErrorBusqueda("Ingrese un DNI para buscar");
+      return;
+    }
+    
     try {
-      // Buscar cliente por DNI en el backend
       const res = await axios.get(`http://localhost:8080/api/clientes/buscar/${dniBuscado}`);
       if (res.data) {
         setClienteEncontrado(res.data);
       } else {
-        alert("Cliente no encontrado. Debe registrarlo primero.");
+        setErrorBusqueda("Cliente no encontrado. Debe registrarlo primero.");
         setClienteEncontrado(null);
       }
     } catch (error) {
-      alert("Cliente no encontrado en la base de datos.");
+      setErrorBusqueda("Cliente no encontrado en la base de datos.");
       setClienteEncontrado(null);
     }
   };
@@ -134,27 +139,38 @@ export default function Dashboard() {
               <h2 style={{ color: '#1E1E2D', marginBottom: '30px', fontSize: '24px' }}>Recepción de Encomienda</h2>
               
               <div style={{ padding: '20px', backgroundColor: '#F8F9FA', borderRadius: '8px', border: '1px solid #E4E6EF', marginBottom: '25px' }}>
-                <label style={labelStyle}>Identificar Cliente</label>
-                <div style={{ display: 'flex', gap: '15px', marginTop: '8px' }}>
+                <label style={labelStyle}>Paso 1: Identificar Cliente (Remitente)</label>
+                
+                {/* RECUADRO ROJO DE ERROR (Igual al del Login) */}
+                {errorBusqueda && (
+                  <div style={{ padding: '12px', backgroundColor: '#ffebee', color: '#c62828', fontSize: '13px', borderRadius: '6px', marginTop: '10px', textAlign: 'center', fontWeight: '500' }}>
+                    {errorBusqueda}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '15px', marginTop: '10px' }}>
                   <input 
                     type="text" 
                     placeholder="Ingrese DNI del cliente" 
+                    maxLength={8} /* <-- Límite de 8 caracteres */
                     value={dniBuscado} 
-                    onChange={e => setDniBuscado(e.target.value)} 
+                    onChange={e => {
+                      // Reemplaza cualquier cosa que NO sea un número por vacío
+                      const soloNumeros = e.target.value.replace(/\D/g, ''); 
+                      setDniBuscado(soloNumeros);
+                    }} 
                     style={{...inputStyle, flex: 1}} 
-                    disabled={!!clienteEncontrado} /* Bloquea el input si ya hay un cliente */
+                    disabled={!!clienteEncontrado} 
                   />
                   
-                  {/* Botón Buscar normal */}
                   {!clienteEncontrado && (
                     <button type="button" onClick={buscarCliente} style={btnSecondary}>Buscar</button>
                   )}
 
-                  {/* Botón de limpiar búsqueda (X) que aparece si hay texto o cliente */}
                   {(clienteEncontrado || dniBuscado.length > 0) && (
                     <button 
                       type="button" 
-                      onClick={() => { setDniBuscado(''); setClienteEncontrado(null); setTarifa(null); setPeso(''); }} 
+                      onClick={() => { setDniBuscado(''); setClienteEncontrado(null); setTarifa(null); setPeso(''); setErrorBusqueda(''); }} 
                       style={{ padding: '12px 18px', backgroundColor: '#F4F6F8', color: '#D32F2F', border: '1px solid #E4E6EF', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px' }}
                       title="Limpiar búsqueda"
                     >
