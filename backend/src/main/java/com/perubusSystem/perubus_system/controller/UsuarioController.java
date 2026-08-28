@@ -1,4 +1,4 @@
-package com.perubusSystem.perubus_system.Controller;
+package com.perubusSystem.perubus_system.controller;
 
 import com.perubusSystem.perubus_system.model.Usuario;
 import com.perubusSystem.perubus_system.repository.UsuarioRepository;

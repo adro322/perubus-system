@@ -10,22 +10,36 @@ public class Encomienda {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long idEncomienda;
 
-    @Column(length = 50, unique = true)
+    @Column(length = 50, unique = true, nullable = false)
     private String codigoTracking;
 
-    @Column(columnDefinition = "DECIMAL(10,2)")
+    @Column(columnDefinition = "DECIMAL(10,2)", nullable = false)
     private Double peso;
 
+    @Column(name = "estado", columnDefinition = "TEXT", nullable = false)
+    private String estadoLogistico;
+
+    // --- NUEVOS CAMPOS ---
     @Column(columnDefinition = "TEXT")
-    private String estado;
+    private String descripcion;
+
+    @Column(columnDefinition = "DECIMAL(10,2)", nullable = false)
+    private Double tarifaBase;
+
+    // --- NUEVAS RELACIONES DE CLIENTE ---
     @ManyToOne
-    @JoinColumn(name = "idCliente")
-    private Cliente cliente;
+    @JoinColumn(name = "idRemitente", nullable = false)
+    private Cliente remitente;
 
     @ManyToOne
-    @JoinColumn(name = "idUsuario")
+    @JoinColumn(name = "idDestinatario", nullable = false)
+    private Cliente destinatario;
+
+    @ManyToOne
+    @JoinColumn(name = "idUsuario", nullable = false)
     private Usuario usuario;
 
+    // Este NO lleva nullable = false porque al registrar la caja aún no hay bus
     @ManyToOne
     @JoinColumn(name = "idManifiesto")
     private Manifiesto manifiesto;
@@ -33,7 +47,8 @@ public class Encomienda {
     public Encomienda() {
     }
 
-    // Getters y Setters
+    // --- Getters y Setters ---
+
     public Long getIdEncomienda() {
         return idEncomienda;
     }
@@ -58,20 +73,44 @@ public class Encomienda {
         this.peso = peso;
     }
 
-    public String getEstado() {
-        return estado;
+    public String getEstadoLogistico() {
+        return estadoLogistico;
     }
 
-    public void setEstado(String estado) {
-        this.estado = estado;
+    public void setEstadoLogistico(String estadoLogistico) {
+        this.estadoLogistico = estadoLogistico;
     }
 
-    public Cliente getCliente() {
-        return cliente;
+    public String getDescripcion() {
+        return descripcion;
     }
 
-    public void setCliente(Cliente cliente) {
-        this.cliente = cliente;
+    public void setDescripcion(String descripcion) {
+        this.descripcion = descripcion;
+    }
+
+    public Double getTarifaBase() {
+        return tarifaBase;
+    }
+
+    public void setTarifaBase(Double tarifaBase) {
+        this.tarifaBase = tarifaBase;
+    }
+
+    public Cliente getRemitente() {
+        return remitente;
+    }
+
+    public void setRemitente(Cliente remitente) {
+        this.remitente = remitente;
+    }
+
+    public Cliente getDestinatario() {
+        return destinatario;
+    }
+
+    public void setDestinatario(Cliente destinatario) {
+        this.destinatario = destinatario;
     }
 
     public Usuario getUsuario() {

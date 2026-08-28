@@ -1,4 +1,4 @@
-package com.perubusSystem.perubus_system.Controller;
+package com.perubusSystem.perubus_system.controller;
 
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.model.Encomienda;
@@ -7,6 +7,8 @@ import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.perubusSystem.perubus_system.model.Usuario;
+import com.perubusSystem.perubus_system.repository.UsuarioRepository;
 
 import java.util.Map;
 import java.util.UUID;
@@ -21,6 +23,9 @@ public class EncomiendaController {
 
     @Autowired
     private ClienteRepository clienteRepository;
+
+    @Autowired
+    private UsuarioRepository usuarioRepository;
 
     // ==========================================
     // CUS-02: COTIZAR ENVÍO (Solo calcula, no guarda en BD)
@@ -47,18 +52,35 @@ public class EncomiendaController {
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarEncomienda(@RequestBody Encomienda encomienda) {
 
-        // Validamos y guardamos el Cliente (Si no existe, se crea)
-        if (encomienda.getCliente() != null) {
-            Cliente cliente = clienteRepository.findByNumDocumento(encomienda.getCliente().getNumDocumento())
-                    .orElseGet(() -> clienteRepository.save(encomienda.getCliente()));
-            encomienda.setCliente(cliente);
+        // 1. Validar Usuario (El ID viene desde React)
+        if (encomienda.getUsuario() != null && encomienda.getUsuario().getIdUsuario() != null) {
+            Usuario usuarioBD = usuarioRepository.findById(encomienda.getUsuario().getIdUsuario())
+                    .orElseThrow(() -> new RuntimeException("Error: El usuario autenticado no existe en la BD."));
+            encomienda.setUsuario(usuarioBD);
+        } else {
+            return ResponseEntity.badRequest().body("Error: Falta el ID del usuario que registra.");
         }
-        // Generar Código de Tracking automático
+
+        // 2. Validamos y guardamos el REMITENTE
+        if (encomienda.getRemitente() != null) {
+            Cliente remitente = clienteRepository.findByNumDocumento(encomienda.getRemitente().getNumDocumento())
+                    .orElseGet(() -> clienteRepository.save(encomienda.getRemitente()));
+            encomienda.setRemitente(remitente);
+        }
+
+        // 3. Validamos y guardamos el DESTINATARIO
+        if (encomienda.getDestinatario() != null) {
+            Cliente destinatario = clienteRepository.findByNumDocumento(encomienda.getDestinatario().getNumDocumento())
+                    .orElseGet(() -> clienteRepository.save(encomienda.getDestinatario()));
+            encomienda.setDestinatario(destinatario);
+        }
+
+        // 4. Generar Tracking y Estado Inicial
         String tracking = "PERU-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         encomienda.setCodigoTracking(tracking);
+        encomienda.setEstadoLogistico("En origen");
 
-        encomienda.setEstado("En origen");
-
+        // 5. Guardar todo en PostgreSQL (Supabase)
         Encomienda encomiendaGuardada = encomiendaRepository.save(encomienda);
 
         return ResponseEntity.ok(encomiendaGuardada);

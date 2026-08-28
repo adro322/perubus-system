@@ -19,6 +19,8 @@ export default function Dashboard() {
   const [destino, setDestino] = useState('');
   const [tarifa, setTarifa] = useState<number | null>(null);
   const [listaEncomiendas, setListaEncomiendas] = useState([]);
+  const [destinatarioForm, setDestinatarioForm] = useState({ numDocumento: '', nombres: '', telefono: '' });
+  const [descripcion, setDescripcion] = useState('');
 
   // Cargar listas al cambiar de vista
   useEffect(() => {
@@ -80,15 +82,32 @@ export default function Dashboard() {
 
   const registrarEncomienda = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clienteEncontrado) return alert("Primero busque y valide un cliente válido");
+    if (!clienteEncontrado) return alert("Primero busque y valide un remitente válido");
+    if (tarifa === null) return alert("Debe calcular la tarifa antes de registrar");
+
     try {
       const res = await axios.post('http://localhost:8080/api/encomiendas/registrar', {
         peso: parseFloat(peso),
-        cliente: { numDocumento: clienteEncontrado.numDocumento } 
+        descripcion: descripcion,
+        tarifaBase: tarifa,
+        remitente: { numDocumento: clienteEncontrado.numDocumento },
+        destinatario: { 
+            numDocumento: destinatarioForm.numDocumento,
+            nombres: destinatarioForm.nombres,
+            telefono: destinatarioForm.telefono
+        },
+        usuario: { idUsuario: 1 } 
       });
       mostrarMensaje(`Tracking generado: ${res.data.codigoTracking}`);
+      
+      // Limpiar formulario después de guardar
       setPeso(''); setDniBuscado(''); setClienteEncontrado(null); setTarifa(null); setDestino('');
-    } catch (error) { alert("Error al registrar la encomienda"); }
+      setDescripcion(''); setDestinatarioForm({ numDocumento: '', nombres: '', telefono: '' });
+      
+    } catch (error) { 
+        alert("Error al registrar la encomienda. Verifica la consola."); 
+        console.error(error);
+    }
   };
 
   const mostrarMensaje = (texto: string) => {
@@ -197,7 +216,22 @@ export default function Dashboard() {
                       <option value="Lima-Arequipa">Lima - Arequipa</option>
                     </select>
                   </div>
-                  
+                  {/* --- NUEVO BLOQUE: DESTINATARIO --- */}
+                  <div style={{ gridColumn: 'span 2', padding: '15px', backgroundColor: '#fff', border: '1px dashed #D32F2F', borderRadius: '6px' }}>
+                    <label style={{...labelStyle, color: '#D32F2F'}}>Paso 2: Datos del Destinatario</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginTop: '10px' }}>
+                      <input type="text" placeholder="DNI Destinatario" maxLength={8} required value={destinatarioForm.numDocumento} onChange={e => setDestinatarioForm({...destinatarioForm, numDocumento: e.target.value.replace(/\D/g, '')})} style={inputStyle} />
+                      <input type="text" placeholder="Nombres del Destinatario" required value={destinatarioForm.nombres} onChange={e => setDestinatarioForm({...destinatarioForm, nombres: e.target.value})} style={inputStyle} />
+                      <input type="text" placeholder="Teléfono" maxLength={9} required value={destinatarioForm.telefono} onChange={e => setDestinatarioForm({...destinatarioForm, telefono: e.target.value.replace(/\D/g, '')})} style={inputStyle} />
+                    </div>
+                  </div>
+
+                  {/* --- NUEVO BLOQUE: DESCRIPCIÓN --- */}
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label style={labelStyle}>Descripción del Paquete</label>
+                    <input type="text" placeholder="Ej: Caja con repuestos, Documentos, etc." required value={descripcion} onChange={e => setDescripcion(e.target.value)} style={inputStyle} />
+                  </div>
+
                   <div style={{ gridColumn: 'span 2' }}>
                     <label style={labelStyle}>Peso del Paquete (Kg)</label>
                     <div style={{ display: 'flex', gap: '15px' }}>
@@ -279,7 +313,7 @@ export default function Dashboard() {
                       <td style={tdStyle}>{enc.peso} Kg</td>
                       <td style={tdStyle}>
                         <span style={{ backgroundColor: '#E8F5E9', color: '#2E7D32', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>
-                          {enc.estado}
+                          {enc.estadoLogistico}
                         </span>
                       </td>
                       <td style={tdStyle}>

@@ -25,6 +25,9 @@ public class Cliente {
     @Column(columnDefinition = "TEXT")
     private String correo;
 
+    @Column(length = 255)
+    private String password;
+
     public Cliente() {
     }
 
@@ -76,4 +79,9 @@ public class Cliente {
     public void setCorreo(String correo) {
         this.correo = correo;
     }
+
+    public String getPassword() {
+        return password;
+    }
+
 }
