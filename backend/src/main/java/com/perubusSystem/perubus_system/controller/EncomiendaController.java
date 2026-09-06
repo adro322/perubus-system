@@ -9,9 +9,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import com.perubusSystem.perubus_system.model.Usuario;
 import com.perubusSystem.perubus_system.repository.UsuarioRepository;
+import com.perubusSystem.perubus_system.dto.ClienteResumen;
+import com.perubusSystem.perubus_system.dto.EncomiendaConsulta;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.Locale;
 
 @RestController
 @RequestMapping("/api/encomiendas")
@@ -89,6 +92,56 @@ public class EncomiendaController {
     // Para ver el historial de encomiendas
     @GetMapping
     public ResponseEntity<?> listarEncomiendas() {
-        return ResponseEntity.ok(encomiendaRepository.findAll());
+        return ResponseEntity.ok(encomiendaRepository.findAll().stream()
+                .map(this::convertirAConsulta)
+                .toList());
+    }
+
+    @GetMapping("/buscar/{codigoTracking}")
+    public ResponseEntity<?> consultarEncomienda(@PathVariable String codigoTracking) {
+        String trackingNormalizado = codigoTracking == null
+                ? ""
+                : codigoTracking.trim().toUpperCase(Locale.ROOT);
+
+        if (!trackingNormalizado.matches("PERU-[A-Z0-9]{8}")) {
+            return ResponseEntity.badRequest().body("El código de tracking no tiene un formato válido.");
+        }
+
+        return encomiendaRepository.findByCodigoTracking(trackingNormalizado)
+                .map(encomienda -> ResponseEntity.ok(convertirAConsulta(encomienda)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    private EncomiendaConsulta convertirAConsulta(Encomienda encomienda) {
+        String ruta = encomienda.getManifiesto() == null ? null : encomienda.getManifiesto().getRuta();
+        String fechaViaje = encomienda.getManifiesto() == null || encomienda.getManifiesto().getFechaViaje() == null
+                ? null
+                : encomienda.getManifiesto().getFechaViaje().toString();
+        String numeroBus = encomienda.getManifiesto() == null ? null : encomienda.getManifiesto().getNumBus();
+
+        return new EncomiendaConsulta(
+                encomienda.getCodigoTracking(),
+                encomienda.getPeso(),
+                encomienda.getEstadoLogistico(),
+                encomienda.getDescripcion(),
+                encomienda.getTarifaBase(),
+                convertirCliente(encomienda.getRemitente()),
+                convertirCliente(encomienda.getDestinatario()),
+                ruta,
+                fechaViaje,
+                numeroBus);
+    }
+
+    private ClienteResumen convertirCliente(Cliente cliente) {
+        if (cliente == null) {
+            return null;
+        }
+
+        return new ClienteResumen(
+                cliente.getNombres(),
+                cliente.getApellidos(),
+                cliente.getNumDocumento(),
+                cliente.getTelefono(),
+                cliente.getCorreo());
     }
 }

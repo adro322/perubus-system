@@ -19,6 +19,10 @@ export default function Dashboard() {
   const [destino, setDestino] = useState('');
   const [tarifa, setTarifa] = useState<number | null>(null);
   const [listaEncomiendas, setListaEncomiendas] = useState([]);
+  const [trackingBuscado, setTrackingBuscado] = useState('');
+  const [encomiendaConsultada, setEncomiendaConsultada] = useState<any>(null);
+  const [resumenRegistrado, setResumenRegistrado] = useState<any>(null);
+  const [errorConsulta, setErrorConsulta] = useState('');
   const [destinatarioForm, setDestinatarioForm] = useState({ numDocumento: '', nombres: '', telefono: '' });
   const [descripcion, setDescripcion] = useState('');
 
@@ -40,6 +44,52 @@ export default function Dashboard() {
       const res = await axios.get('http://localhost:8080/api/encomiendas');
       setListaEncomiendas(res.data);
     } catch (error) { console.error("Error al cargar encomiendas"); }
+  };
+
+  const consultarEncomienda = async () => {
+    const trackingNormalizado = trackingBuscado.trim().toUpperCase();
+    setErrorConsulta('');
+    setEncomiendaConsultada(null);
+
+    if (!/^PERU-[A-Z0-9]{8}$/.test(trackingNormalizado)) {
+      setErrorConsulta('Ingrese un código con el formato PERU-XXXXXXXX.');
+      return;
+    }
+
+    try {
+      const res = await axios.get(`http://localhost:8080/api/encomiendas/buscar/${trackingNormalizado}`);
+      setEncomiendaConsultada(res.data);
+    } catch (error: any) {
+      setErrorConsulta(error.response?.status === 404
+        ? 'No se encontró una encomienda con ese tracking.'
+        : 'No se pudo consultar la encomienda.');
+    }
+  };
+
+  const imprimirEncomienda = () => {
+    if (encomiendaConsultada) {
+      window.print();
+    }
+  };
+
+  const limpiarConsulta = () => {
+    setTrackingBuscado('');
+    setEncomiendaConsultada(null);
+    setErrorConsulta('');
+  };
+
+  const iniciarNuevaEncomienda = () => {
+    setResumenRegistrado(null);
+    setPeso('');
+    setDniBuscado('');
+    setClienteEncontrado(null);
+    setTarifa(null);
+    setDestino('');
+    setDescripcion('');
+    setDestinatarioForm({ numDocumento: '', nombres: '', telefono: '' });
+    setErrorBusqueda('');
+    setMensaje('');
+    setVistaActual('registro_encomienda');
   };
 
   const buscarCliente = async () => {
@@ -98,6 +148,8 @@ export default function Dashboard() {
         },
         usuario: { idUsuario: 1 } 
       });
+      setEncomiendaConsultada(null);
+      setResumenRegistrado(res.data);
       mostrarMensaje(`Tracking generado: ${res.data.codigoTracking}`);
       
       // Limpiar formulario después de guardar
@@ -116,7 +168,8 @@ export default function Dashboard() {
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', backgroundColor: '#F4F7FA', fontFamily: "'Inter', 'Segoe UI', sans-serif" }}>
+    <>
+    <div className="app-shell" style={{ display: 'flex', height: '100vh', backgroundColor: '#F4F7FA', fontFamily: "'Inter', 'Segoe UI', sans-serif" }}>
       
       {/* SIDEBAR PROFESIONAL */}
       <div style={{ width: '280px', backgroundColor: '#1E1E2D', color: '#A2A3B7', display: 'flex', flexDirection: 'column' }}>
@@ -155,6 +208,27 @@ export default function Dashboard() {
              ========================================= */}
           {vistaActual === 'registro_encomienda' && (
             <div>
+              {resumenRegistrado && (
+                <div style={{ padding: '20px', border: '1px solid #4CAF50', borderRadius: '8px', marginTop: '10px', marginBottom: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <h3 style={{ color: '#1E1E2D' }}>Resumen de encomienda registrada</h3>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button type="button" onClick={() => window.print()} style={btnSecondary}>Imprimir / PDF</button>
+                      <button type="button" onClick={iniciarNuevaEncomienda} style={btnLight}>Nueva encomienda</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', color: '#3F4254' }}>
+                    <div><strong>Tracking:</strong> {resumenRegistrado.codigoTracking}</div>
+                    <div><strong>Estado:</strong> {resumenRegistrado.estadoLogistico}</div>
+                    <div><strong>Peso:</strong> {resumenRegistrado.peso} Kg</div>
+                    <div><strong>Tarifa:</strong> S/ {Number(resumenRegistrado.tarifaBase).toFixed(2)}</div>
+                    <div><strong>Descripción:</strong> {resumenRegistrado.descripcion}</div>
+                  </div>
+                </div>
+              )}
+
+              {!resumenRegistrado && (
+                <>
               <h2 style={{ color: '#1E1E2D', marginBottom: '30px', fontSize: '24px' }}>Recepción de Encomienda</h2>
               
               <div style={{ padding: '20px', backgroundColor: '#F8F9FA', borderRadius: '8px', border: '1px solid #E4E6EF', marginBottom: '25px' }}>
@@ -247,7 +321,10 @@ export default function Dashboard() {
                   )}
 
                   <button type="submit" style={{ ...btnPrimary, gridColumn: 'span 2', marginTop: '10px' }}>Confirmar y Registrar Encomienda</button>
+
                 </form>
+              )}
+                </>
               )}
             </div>
           )}
@@ -297,6 +374,43 @@ export default function Dashboard() {
           {vistaActual === 'lista_encomiendas' && (
             <div>
               <h2 style={{ color: '#1E1E2D', marginBottom: '20px', fontSize: '24px' }}>Historial de Encomiendas</h2>
+              <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+                <input
+                  type="text"
+                  value={trackingBuscado}
+                  maxLength={13}
+                  placeholder="Consultar tracking: PERU-XXXXXXXX"
+                  onChange={e => setTrackingBuscado(e.target.value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase())}
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                <button type="button" onClick={consultarEncomienda} style={btnSecondary}>Consultar</button>
+              </div>
+              {errorConsulta && (
+                <div style={{ padding: '12px', backgroundColor: '#ffebee', color: '#c62828', borderRadius: '6px', marginBottom: '20px' }}>
+                  {errorConsulta}
+                </div>
+              )}
+              {encomiendaConsultada && (
+                <div style={{ padding: '20px', border: '1px solid #D32F2F', borderRadius: '8px', marginBottom: '25px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <h3 style={{ color: '#1E1E2D' }}>Detalle de {encomiendaConsultada.codigoTracking}</h3>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button type="button" onClick={imprimirEncomienda} style={btnSecondary}>Imprimir / PDF</button>
+                      <button type="button" onClick={limpiarConsulta} style={btnLight}>Limpiar consulta</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', color: '#3F4254' }}>
+                    <div><strong>Estado:</strong> {encomiendaConsultada.estadoLogistico}</div>
+                    <div><strong>Peso:</strong> {encomiendaConsultada.peso} Kg</div>
+                    <div><strong>Descripción:</strong> {encomiendaConsultada.descripcion}</div>
+                    <div><strong>Tarifa:</strong> S/ {Number(encomiendaConsultada.tarifaBase).toFixed(2)}</div>
+                    <div><strong>Remitente:</strong> {encomiendaConsultada.remitente?.nombres} {encomiendaConsultada.remitente?.apellidos}</div>
+                    <div><strong>Destinatario:</strong> {encomiendaConsultada.destinatario?.nombres} {encomiendaConsultada.destinatario?.apellidos}</div>
+                    {encomiendaConsultada.ruta && <div><strong>Ruta:</strong> {encomiendaConsultada.ruta}</div>}
+                    {encomiendaConsultada.fechaViaje && <div><strong>Viaje:</strong> {encomiendaConsultada.fechaViaje}</div>}
+                  </div>
+                </div>
+              )}
               <table style={tableStyle}>
                 <thead>
                   <tr>
@@ -332,6 +446,28 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
+    {(encomiendaConsultada || resumenRegistrado) && (() => {
+      const reporte = resumenRegistrado || encomiendaConsultada;
+      return (
+        <div className="ticket-impresion">
+          <h1>PeruBus Cargo</h1>
+          <p className="ticket-titulo">Comprobante de encomienda</p>
+          <div className="ticket-linea" />
+          <p><strong>Tracking:</strong> {reporte.codigoTracking}</p>
+          <p><strong>Estado:</strong> {reporte.estadoLogistico}</p>
+          <p><strong>Peso:</strong> {reporte.peso} Kg</p>
+          <p><strong>Tarifa:</strong> S/ {Number(reporte.tarifaBase).toFixed(2)}</p>
+          <p><strong>Descripción:</strong> {reporte.descripcion}</p>
+          {reporte.remitente && <p><strong>Remitente:</strong> {reporte.remitente.nombres} {reporte.remitente.apellidos}</p>}
+          {reporte.destinatario && <p><strong>Destinatario:</strong> {reporte.destinatario.nombres} {reporte.destinatario.apellidos}</p>}
+          {reporte.ruta && <p><strong>Ruta:</strong> {reporte.ruta}</p>}
+          {reporte.fechaViaje && <p><strong>Viaje:</strong> {reporte.fechaViaje}</p>}
+          <div className="ticket-linea" />
+          <p className="ticket-pie">Conserve este comprobante para consultar el estado de su encomienda.</p>
+        </div>
+      );
+    })()}
+    </>
   );
 }
 
@@ -343,6 +479,7 @@ const labelStyle = { display: 'block', marginBottom: '8px', fontSize: '13px', fo
 const inputStyle = { width: '100%', padding: '12px 15px', border: '1px solid #E4E6EF', borderRadius: '6px', boxSizing: 'border-box' as const, fontSize: '14px', backgroundColor: '#ffffff', color: '#3F4254', outline: 'none', transition: 'border-color 0.15s ease-in-out' };
 const btnPrimary = { padding: '14px', backgroundColor: '#D32F2F', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '15px', transition: 'background-color 0.3s' };
 const btnSecondary = { padding: '12px 20px', backgroundColor: '#1E1E2D', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' };
+const btnLight = { padding: '12px 20px', backgroundColor: '#F4F6F8', color: '#D32F2F', border: '1px solid #E4E6EF', borderRadius: '6px', cursor: 'pointer', fontWeight: '600' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse' as const, marginTop: '10px' };
 const thStyle = { textAlign: 'left' as const, padding: '15px', backgroundColor: '#F8F9FA', color: '#B5B5C3', fontSize: '12px', textTransform: 'uppercase' as const, letterSpacing: '1px', borderBottom: '1px solid #E4E6EF' };
 const tdStyle = { padding: '15px', borderBottom: '1px dashed #E4E6EF', color: '#3F4254', fontSize: '14px' };
