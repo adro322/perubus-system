@@ -23,10 +23,9 @@ export default function Dashboard() {
   const [encomiendaConsultada, setEncomiendaConsultada] = useState<any>(null);
   const [resumenRegistrado, setResumenRegistrado] = useState<any>(null);
   const [errorConsulta, setErrorConsulta] = useState('');
-  const [destinatarioForm, setDestinatarioForm] = useState({ numDocumento: '', nombres: '', telefono: '' });
+  const [destinatarioForm, setDestinatarioForm] = useState({ numDocumento: '', nombres: '', apellidos: '', telefono: '', correo: '' });
   const [descripcion, setDescripcion] = useState('');
 
-  // Cargar listas al cambiar de vista
   useEffect(() => {
     if (vistaActual === 'lista_clientes') cargarClientes();
     if (vistaActual === 'lista_encomiendas') cargarEncomiendas();
@@ -86,14 +85,20 @@ export default function Dashboard() {
     setTarifa(null);
     setDestino('');
     setDescripcion('');
-    setDestinatarioForm({ numDocumento: '', nombres: '', telefono: '' });
+    setDestinatarioForm({
+      numDocumento: '',
+      nombres: '',
+      apellidos: '',
+      telefono: '',
+      correo: '',
+    });
     setErrorBusqueda('');
     setMensaje('');
     setVistaActual('registro_encomienda');
   };
 
   const buscarCliente = async () => {
-    setErrorBusqueda(''); // Limpia errores anteriores
+    setErrorBusqueda(''); 
     if (!dniBuscado) {
       setErrorBusqueda("Ingrese un DNI para buscar");
       return;
@@ -144,7 +149,9 @@ export default function Dashboard() {
         destinatario: { 
             numDocumento: destinatarioForm.numDocumento,
             nombres: destinatarioForm.nombres,
-            telefono: destinatarioForm.telefono
+            apellidos: destinatarioForm.apellidos,
+            telefono: destinatarioForm.telefono,
+            correo: destinatarioForm.correo 
         },
         usuario: { idUsuario: 1 } 
       });
@@ -152,9 +159,8 @@ export default function Dashboard() {
       setResumenRegistrado(res.data);
       mostrarMensaje(`Tracking generado: ${res.data.codigoTracking}`);
       
-      // Limpiar formulario después de guardar
       setPeso(''); setDniBuscado(''); setClienteEncontrado(null); setTarifa(null); setDestino('');
-      setDescripcion(''); setDestinatarioForm({ numDocumento: '', nombres: '', telefono: '' });
+      setDescripcion(''); setDestinatarioForm({ numDocumento: '', nombres: '', apellidos: '', telefono: '', correo: '' });
       
     } catch (error) { 
         alert("Error al registrar la encomienda. Verifica la consola."); 
@@ -171,7 +177,6 @@ export default function Dashboard() {
     <>
     <div className="app-shell" style={{ display: 'flex', height: '100vh', backgroundColor: '#F4F7FA', fontFamily: "'Inter', 'Segoe UI', sans-serif" }}>
       
-      {/* SIDEBAR PROFESIONAL */}
       <div style={{ width: '280px', backgroundColor: '#1E1E2D', color: '#A2A3B7', display: 'flex', flexDirection: 'column' }}>
         <div style={{  textAlign: 'center' }}>
             <img src="/src/assets/logo.png" alt="Logo PerúBus" style={{ width: '260px', maxWidth: '100%', padding: '20px' }} />
@@ -192,7 +197,6 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* ÁREA DE CONTENIDO */}
       <div style={{ flex: 1, padding: '40px', overflowY: 'auto' }}>
         
         {mensaje && (
@@ -290,13 +294,14 @@ export default function Dashboard() {
                       <option value="Lima-Arequipa">Lima - Arequipa</option>
                     </select>
                   </div>
-                  {/* --- NUEVO BLOQUE: DESTINATARIO --- */}
                   <div style={{ gridColumn: 'span 2', padding: '15px', backgroundColor: '#fff', border: '1px dashed #D32F2F', borderRadius: '6px' }}>
                     <label style={{...labelStyle, color: '#D32F2F'}}>Paso 2: Datos del Destinatario</label>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginTop: '10px' }}>
                       <input type="text" placeholder="DNI Destinatario" maxLength={8} required value={destinatarioForm.numDocumento} onChange={e => setDestinatarioForm({...destinatarioForm, numDocumento: e.target.value.replace(/\D/g, '')})} style={inputStyle} />
-                      <input type="text" placeholder="Nombres del Destinatario" required value={destinatarioForm.nombres} onChange={e => setDestinatarioForm({...destinatarioForm, nombres: e.target.value})} style={inputStyle} />
+                      <input type="text" placeholder="Nombres" required value={destinatarioForm.nombres} onChange={e => setDestinatarioForm({...destinatarioForm, nombres: e.target.value})} style={inputStyle} />
+                      <input type="text" placeholder="Apellidos" required value={destinatarioForm.apellidos} onChange={e => setDestinatarioForm({...destinatarioForm, apellidos: e.target.value})} style={inputStyle} />
                       <input type="text" placeholder="Teléfono" maxLength={9} required value={destinatarioForm.telefono} onChange={e => setDestinatarioForm({...destinatarioForm, telefono: e.target.value.replace(/\D/g, '')})} style={inputStyle} />
+                      <input type="email" placeholder="Correo (Opcional)" value={destinatarioForm.correo} onChange={e => setDestinatarioForm({...destinatarioForm, correo: e.target.value})} style={inputStyle} />
                     </div>
                   </div>
 
@@ -415,15 +420,21 @@ export default function Dashboard() {
                 <thead>
                   <tr>
                     <th style={thStyle}>Tracking</th>
+                    <th style={thStyle}>Remitente</th> 
                     <th style={thStyle}>Peso</th>
                     <th style={thStyle}>Estado</th>
-                    <th style={thStyle}>Acciones</th> {/* Nueva columna */}
+                    <th style={thStyle}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {listaEncomiendas.map((enc: any) => (
                     <tr key={enc.idEncomienda} style={trStyle}>
                       <td style={{...tdStyle, fontWeight: 'bold', color: '#D32F2F'}}>{enc.codigoTracking}</td>
+                      
+                      <td style={tdStyle}>
+                        {enc.remitente ? `${enc.remitente.nombres} ${enc.remitente.apellidos || ''}` : 'Sin datos'}
+                      </td>
+                      
                       <td style={tdStyle}>{enc.peso} Kg</td>
                       <td style={tdStyle}>
                         <span style={{ backgroundColor: '#E8F5E9', color: '#2E7D32', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>

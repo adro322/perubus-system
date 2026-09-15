@@ -16,18 +16,15 @@ public class ClienteController {
 
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarCliente(@RequestBody Cliente cliente) {
-        // Guarda el cliente directamente en la base de datos
         Cliente clienteGuardado = clienteRepository.save(cliente);
         return ResponseEntity.ok(clienteGuardado);
     }
 
-    // Para ver todos los clientes en la tabla
     @GetMapping
     public ResponseEntity<?> listarClientes() {
         return ResponseEntity.ok(clienteRepository.findAll());
     }
 
-    // Para que el buscador del DNI funcione
     @GetMapping("/buscar/{dni}")
     public ResponseEntity<?> buscarPorDni(@PathVariable String dni) {
         return clienteRepository.findByNumDocumento(dni)
