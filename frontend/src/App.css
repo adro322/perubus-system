@@ -1,0 +1,52 @@
+.ticket-impresion {
+	display: none;
+}
+
+@media print {
+	@page {
+		margin: 12mm;
+	}
+
+	.app-shell {
+		display: none !important;
+	}
+
+	.ticket-impresion {
+		display: block;
+		width: 72mm;
+		margin: 0 auto;
+		font-family: Arial, sans-serif;
+		font-size: 12px;
+		line-height: 1.45;
+		color: #111;
+	}
+
+	.ticket-impresion h1,
+	.ticket-titulo,
+	.ticket-pie {
+		text-align: center;
+	}
+
+	.ticket-impresion h1 {
+		font-size: 18px;
+		margin: 0 0 4px;
+	}
+
+	.ticket-titulo {
+		margin: 0 0 10px;
+		font-weight: bold;
+	}
+
+	.ticket-linea {
+		border-top: 1px dashed #111;
+		margin: 10px 0;
+	}
+
+	.ticket-impresion p {
+		margin: 5px 0;
+	}
+
+	.ticket-pie {
+		font-size: 10px;
+	}
+}

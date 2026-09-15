@@ -12,7 +12,7 @@ export default function Login() {
     e.preventDefault();
     setError('');
     try {
-      const respuesta = await axios.post('http://localhost:8080/api/usuarios/login', { 
+      await axios.post('http://localhost:8080/api/usuarios/login', {
         username, 
         password 
       });
