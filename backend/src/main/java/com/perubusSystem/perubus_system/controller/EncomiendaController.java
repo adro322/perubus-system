@@ -2,19 +2,18 @@ package com.perubusSystem.perubus_system.controller;
 
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.model.Encomienda;
-import com.perubusSystem.perubus_system.repository.ClienteRepository;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import com.perubusSystem.perubus_system.model.Usuario;
-import com.perubusSystem.perubus_system.repository.UsuarioRepository;
+import com.perubusSystem.perubus_system.service.EncomiendaService;
 import com.perubusSystem.perubus_system.dto.ClienteResumen;
 import com.perubusSystem.perubus_system.dto.EncomiendaConsulta;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 
-import java.util.Map;
-import java.util.UUID;
+import java.util.NoSuchElementException;
 import java.util.Locale;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/encomiendas")
@@ -25,26 +24,24 @@ public class EncomiendaController {
     private EncomiendaRepository encomiendaRepository;
 
     @Autowired
-    private ClienteRepository clienteRepository;
-
-    @Autowired
-    private UsuarioRepository usuarioRepository;
+    private EncomiendaService encomiendaService;
 
     // ==========================================
     // CUS-02: COTIZAR ENVÍO
     // ==========================================
     @PostMapping("/cotizar")
     public ResponseEntity<?> cotizarEnvio(@RequestBody Map<String, Object> datosCotizacion) {
+        try {
+            Double peso = Double.valueOf(datosCotizacion.get("peso").toString());
+            // Ahora el frontend también debe enviarnos origen y destino
+            String origen = datosCotizacion.get("origen").toString();
+            String destino = datosCotizacion.get("destino").toString();
 
-        Double peso = Double.valueOf(datosCotizacion.get("peso").toString());
-
-        // Reglas de negocio de PeruBus
-        double tarifaBaseMinima = 15.0;
-        double costoPorKilo = 5.5;
-
-        double costoEstimado = Math.max(tarifaBaseMinima, peso * costoPorKilo);
-
-        return ResponseEntity.ok(Map.of("costoEstimado", costoEstimado));
+            double costoEstimado = encomiendaService.calcularCotizacion(origen, destino, peso);
+            return ResponseEntity.ok(Map.of("costoEstimado", costoEstimado));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Error en la cotización: " + e.getMessage());
+        }
     }
 
     // ==========================================
@@ -52,36 +49,18 @@ public class EncomiendaController {
     // ==========================================
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarEncomienda(@RequestBody Encomienda encomienda) {
-
-        if (encomienda.getUsuario() != null && encomienda.getUsuario().getIdUsuario() != null) {
-            Usuario usuarioBD = usuarioRepository.findById(encomienda.getUsuario().getIdUsuario())
-                    .orElseThrow(() -> new RuntimeException("Error: El usuario autenticado no existe en la BD."));
-            encomienda.setUsuario(usuarioBD);
-        } else {
-            return ResponseEntity.badRequest().body("Error: Falta el ID del usuario que registra.");
+        try {
+            // Toda la lógica pesada ahora vive en el Service
+            Encomienda encomiendaGuardada = encomiendaService.registrarEncomienda(encomienda);
+            return ResponseEntity.ok(encomiendaGuardada);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
-
-        if (encomienda.getRemitente() != null) {
-            Cliente remitente = clienteRepository.findByNumDocumento(encomienda.getRemitente().getNumDocumento())
-                    .orElseGet(() -> clienteRepository.save(encomienda.getRemitente()));
-            encomienda.setRemitente(remitente);
-        }
-
-        if (encomienda.getDestinatario() != null) {
-            Cliente destinatario = clienteRepository.findByNumDocumento(encomienda.getDestinatario().getNumDocumento())
-                    .orElseGet(() -> clienteRepository.save(encomienda.getDestinatario()));
-            encomienda.setDestinatario(destinatario);
-        }
-
-        String tracking = "PERU-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        encomienda.setCodigoTracking(tracking);
-        encomienda.setEstadoLogistico("En origen");
-
-        Encomienda encomiendaGuardada = encomiendaRepository.save(encomienda);
-
-        return ResponseEntity.ok(encomiendaGuardada);
     }
 
+    // ==========================================
+    // CONSULTAS (Get)
+    // ==========================================
     @GetMapping
     public ResponseEntity<?> listarEncomiendas() {
         return ResponseEntity.ok(encomiendaRepository.findAll().stream()
@@ -104,6 +83,27 @@ public class EncomiendaController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    @PostMapping("/{codigoTracking}/simular-pago")
+    public ResponseEntity<?> simularPago(@PathVariable String codigoTracking) {
+        try {
+            var comprobante = encomiendaService.simularPago(codigoTracking.trim().toUpperCase(Locale.ROOT));
+            return ResponseEntity.ok(Map.of(
+                    "codigoTracking", comprobante.getEncomienda().getCodigoTracking(),
+                    "estadoLogistico", comprobante.getEncomienda().getEstadoLogistico(),
+                    "estadoPago", comprobante.getEstadoPago(),
+                    "subtotal", comprobante.getMontoSubtotal(),
+                    "igv", comprobante.getMontoIgv(),
+                    "total", comprobante.getMontoTotal(),
+                    "fechaPago", comprobante.getFechaPago()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        }
+    }
+
+    // Métodos DTO privados (Estos se quedan aquí porque son para transformar la
+    // salida del endpoint)
     private EncomiendaConsulta convertirAConsulta(Encomienda encomienda) {
         String ruta = encomienda.getManifiesto() == null ? null : encomienda.getManifiesto().getRuta();
         String fechaViaje = encomienda.getManifiesto() == null || encomienda.getManifiesto().getFechaViaje() == null
@@ -125,15 +125,10 @@ public class EncomiendaController {
     }
 
     private ClienteResumen convertirCliente(Cliente cliente) {
-        if (cliente == null) {
+        if (cliente == null)
             return null;
-        }
-
         return new ClienteResumen(
-                cliente.getNombres(),
-                cliente.getApellidos(),
-                cliente.getNumDocumento(),
-                cliente.getTelefono(),
-                cliente.getCorreo());
+                cliente.getNombres(), cliente.getApellidos(),
+                cliente.getNumDocumento(), cliente.getTelefono(), cliente.getCorreo());
     }
 }

@@ -12,10 +12,11 @@ export default function Login() {
     e.preventDefault();
     setError('');
     try {
-      await axios.post('http://localhost:8080/api/usuarios/login', {
+      const res = await axios.post('http://localhost:8080/api/usuarios/login', {
         username, 
         password 
       });
+      sessionStorage.setItem('idUsuario', String(res.data.idUsuario));
       navigate('/dashboard'); 
     } catch (error) {
       setError("Credenciales incorrectas o acceso denegado.");

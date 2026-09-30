@@ -1,10 +1,14 @@
 package com.perubusSystem.perubus_system.model;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 import java.time.LocalDate;
 
 @Entity
 @Table(name = "manifiesto")
+@Getter
+@Setter
 public class Manifiesto {
 
     @Id
@@ -24,46 +28,5 @@ public class Manifiesto {
     private Double pesoTotalCarga;
 
     public Manifiesto() {
-    }
-
-    // --- Getters y Setters ---
-    public Long getIdManifiesto() {
-        return idManifiesto;
-    }
-
-    public void setIdManifiesto(Long idManifiesto) {
-        this.idManifiesto = idManifiesto;
-    }
-
-    public String getNumBus() {
-        return numBus;
-    }
-
-    public void setNumBus(String numBus) {
-        this.numBus = numBus;
-    }
-
-    public String getRuta() {
-        return ruta;
-    }
-
-    public void setRuta(String ruta) {
-        this.ruta = ruta;
-    }
-
-    public LocalDate getFechaViaje() {
-        return fechaViaje;
-    }
-
-    public void setFechaViaje(LocalDate fechaViaje) {
-        this.fechaViaje = fechaViaje;
-    }
-
-    public Double getPesoTotalCarga() {
-        return pesoTotalCarga;
-    }
-
-    public void setPesoTotalCarga(Double pesoTotalCarga) {
-        this.pesoTotalCarga = pesoTotalCarga;
     }
 }

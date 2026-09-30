@@ -4,6 +4,7 @@ import axios from 'axios';
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const [usuarioId] = useState(() => Number(sessionStorage.getItem('idUsuario')));
   const [vistaActual, setVistaActual] = useState('registro_encomienda'); 
   const [mensaje, setMensaje] = useState('');
 
@@ -18,7 +19,9 @@ export default function Dashboard() {
   const [peso, setPeso] = useState('');
   const [destino, setDestino] = useState('');
   const [tarifa, setTarifa] = useState<number | null>(null);
-  const [listaEncomiendas, setListaEncomiendas] = useState([]);
+  const [listaEncomiendas, setListaEncomiendas] = useState<any[]>([]);
+  const [pagoSeleccionado, setPagoSeleccionado] = useState<any>(null);
+  const [pagoProcesando, setPagoProcesando] = useState(false);
   const [trackingBuscado, setTrackingBuscado] = useState('');
   const [encomiendaConsultada, setEncomiendaConsultada] = useState<any>(null);
   const [resumenRegistrado, setResumenRegistrado] = useState<any>(null);
@@ -43,6 +46,25 @@ export default function Dashboard() {
       const res = await axios.get('http://localhost:8080/api/encomiendas');
       setListaEncomiendas(res.data);
     } catch (error) { console.error("Error al cargar encomiendas"); }
+  };
+
+  const confirmarPago = async () => {
+    if (!pagoSeleccionado || pagoProcesando) return;
+    setPagoProcesando(true);
+    try {
+      const res = await axios.post(`http://localhost:8080/api/encomiendas/${encodeURIComponent(pagoSeleccionado.codigoTracking)}/simular-pago`);
+      setListaEncomiendas((actual: any[]) => actual.map(encomienda =>
+        encomienda.codigoTracking === res.data.codigoTracking
+          ? { ...encomienda, estadoLogistico: res.data.estadoLogistico }
+          : encomienda
+      ));
+      setPagoSeleccionado(null);
+      mostrarMensaje(`Pago simulado registrado para ${res.data.codigoTracking}`);
+    } catch (error: any) {
+      alert(error.response?.data?.mensaje || "No se pudo registrar el pago simulado.");
+    } finally {
+      setPagoProcesando(false);
+    }
   };
 
   const consultarEncomienda = async () => {
@@ -129,8 +151,14 @@ export default function Dashboard() {
 
   const calcularTarifa = async () => {
     if (!peso || parseFloat(peso) <= 0) return alert("Ingrese un peso válido");
+    const [origen, destinoRuta] = destino.split('-');
+    if (!origen || !destinoRuta) return alert("Seleccione una ruta válida");
     try {
-      const res = await axios.post('http://localhost:8080/api/encomiendas/cotizar', { peso: parseFloat(peso) });
+      const res = await axios.post('http://localhost:8080/api/encomiendas/cotizar', {
+        origen,
+        destino: destinoRuta,
+        peso: parseFloat(peso),
+      });
       setTarifa(res.data.costoEstimado);
     } catch (error) { alert("Error al cotizar"); }
   };
@@ -139,6 +167,7 @@ export default function Dashboard() {
     e.preventDefault();
     if (!clienteEncontrado) return alert("Primero busque y valide un remitente válido");
     if (tarifa === null) return alert("Debe calcular la tarifa antes de registrar");
+    if (!Number.isInteger(usuarioId) || usuarioId <= 0) return alert("La sesión no contiene un usuario válido. Inicie sesión nuevamente.");
 
     try {
       const res = await axios.post('http://localhost:8080/api/encomiendas/registrar', {
@@ -153,7 +182,7 @@ export default function Dashboard() {
             telefono: destinatarioForm.telefono,
             correo: destinatarioForm.correo 
         },
-        usuario: { idUsuario: 1 } 
+        usuario: { idUsuario: usuarioId } 
       });
       setEncomiendaConsultada(null);
       setResumenRegistrado(res.data);
@@ -192,7 +221,7 @@ export default function Dashboard() {
           <button onClick={() => setVistaActual('lista_clientes')} style={obtenerEstiloMenu(vistaActual === 'lista_clientes')}>Cartera de Clientes</button>
         </div>
 
-        <button onClick={() => navigate('/')} style={{ padding: '20px', backgroundColor: '#1a1a27', color: '#ff4d4d', border: 'none', cursor: 'pointer', borderTop: '1px solid #2B2B40', textAlign: 'left', fontWeight: 'bold' }}>
+        <button onClick={() => { sessionStorage.removeItem('idUsuario'); navigate('/'); }} style={{ padding: '20px', backgroundColor: '#1a1a27', color: '#ff4d4d', border: 'none', cursor: 'pointer', borderTop: '1px solid #2B2B40', textAlign: 'left', fontWeight: 'bold' }}>
           Cerrar Sesión
         </button>
       </div>
@@ -288,10 +317,13 @@ export default function Dashboard() {
               {clienteEncontrado && (
                 <form onSubmit={registrarEncomienda} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                   <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>Ruta / Destino</label>
-                    <select required value={destino} onChange={e => setDestino(e.target.value)} style={inputStyle}>
+                    <select required value={destino} onChange={e => { setDestino(e.target.value); setTarifa(null); }} style={inputStyle}>
                       <option value="">Seleccione ruta de envío...</option>
                       <option value="Lima-Ica">Lima - Ica</option>
-                      <option value="Lima-Arequipa">Lima - Arequipa</option>
+                      <option value="Lima-Nazca">Lima - Nazca</option>
+                      <option value="Ica-Nazca">Ica - Nazca</option>
+                      <option value="Lima-Pisco">Lima - Pisco</option>
+                      <option value="Ica-Pisco">Ica - Pisco</option>
                     </select>
                   </div>
                   <div style={{ gridColumn: 'span 2', padding: '15px', backgroundColor: '#fff', border: '1px dashed #D32F2F', borderRadius: '6px' }}>
@@ -314,7 +346,7 @@ export default function Dashboard() {
                   <div style={{ gridColumn: 'span 2' }}>
                     <label style={labelStyle}>Peso del Paquete (Kg)</label>
                     <div style={{ display: 'flex', gap: '15px' }}>
-                      <input type="number" step="0.01" required value={peso} onChange={e => setPeso(e.target.value)} style={{...inputStyle, flex: 1}} />
+                      <input type="number" step="0.01" required value={peso} onChange={e => { setPeso(e.target.value); setTarifa(null); }} style={{...inputStyle, flex: 1}} />
                       <button type="button" onClick={calcularTarifa} style={btnSecondary}>Calcular Tarifa</button>
                     </div>
                   </div>
@@ -428,7 +460,7 @@ export default function Dashboard() {
                 </thead>
                 <tbody>
                   {listaEncomiendas.map((enc: any) => (
-                    <tr key={enc.idEncomienda} style={trStyle}>
+                    <tr key={enc.codigoTracking} style={trStyle}>
                       <td style={{...tdStyle, fontWeight: 'bold', color: '#D32F2F'}}>{enc.codigoTracking}</td>
                       
                       <td style={tdStyle}>
@@ -442,10 +474,21 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td style={tdStyle}>
-                        {/* Botón preparado para el futuro módulo */}
-                        <button style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#B5B5C3', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'not-allowed' }} disabled>
-                          Asignar Manifiesto 🔒
-                        </button>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          {enc.estadoLogistico?.toLowerCase() === 'pendiente de pago' && (
+                            <button type="button" onClick={() => setPagoSeleccionado(enc)} style={{ padding: '6px 12px', backgroundColor: '#D32F2F', color: 'white', border: '1px solid #D32F2F', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>
+                              Pagar
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={enc.estadoLogistico?.toLowerCase() !== 'en origen'}
+                            onClick={() => mostrarMensaje(`La encomienda ${enc.codigoTracking} está lista para asignarle un manifiesto.`)}
+                            style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: enc.estadoLogistico?.toLowerCase() === 'en origen' ? '#3F4254' : '#B5B5C3', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: enc.estadoLogistico?.toLowerCase() === 'en origen' ? 'pointer' : 'not-allowed' }}
+                          >
+                            Asignar Manifiesto{enc.estadoLogistico?.toLowerCase() !== 'en origen' ? ' 🔒' : ''}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -457,6 +500,45 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
+    {pagoSeleccionado && (() => {
+      const subtotal = Number(pagoSeleccionado.tarifaBase || 0);
+      const igv = Math.round((subtotal * 0.18 + Number.EPSILON) * 100) / 100;
+      const total = subtotal + igv;
+      return (
+        <div
+          onClick={() => !pagoProcesando && setPagoSeleccionado(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pago-title"
+            onClick={event => event.stopPropagation()}
+            style={{ width: '100%', maxWidth: '460px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '16px', marginBottom: '20px' }}>
+              <div>
+                <h2 id="pago-title" style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>Simular pago</h2>
+                <p style={{ margin: '6px 0 0', color: '#777' }}>Encomienda {pagoSeleccionado.codigoTracking}</p>
+              </div>
+              <button type="button" aria-label="Cerrar" title="Cerrar" disabled={pagoProcesando} onClick={() => setPagoSeleccionado(null)} style={{ border: 0, background: 'transparent', fontSize: '22px', color: '#666', cursor: 'pointer' }}>×</button>
+            </div>
+            <div style={{ display: 'grid', gap: '12px', padding: '16px 0', borderTop: '1px solid #E4E6EF', borderBottom: '1px solid #E4E6EF' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}><span>Cliente</span><strong>{pagoSeleccionado.remitente?.nombres} {pagoSeleccionado.remitente?.apellidos}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Descripción</span><strong>{pagoSeleccionado.descripcion || 'Encomienda'}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Subtotal</span><strong>S/ {subtotal.toFixed(2)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>IGV (18%)</span><strong>S/ {igv.toFixed(2)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', color: '#1E1E2D' }}><strong>Total</strong><strong>S/ {total.toFixed(2)}</strong></div>
+            </div>
+            <p style={{ fontSize: '12px', color: '#777', lineHeight: 1.5 }}>Pago simulado. Se guardará el desglose y la fecha para la futura emisión del comprobante.</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+              <button type="button" disabled={pagoProcesando} onClick={() => setPagoSeleccionado(null)} style={{ padding: '10px 14px', backgroundColor: 'white', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', cursor: pagoProcesando ? 'not-allowed' : 'pointer' }}>Cancelar</button>
+              <button type="button" disabled={pagoProcesando} onClick={confirmarPago} style={{ padding: '10px 14px', backgroundColor: '#D32F2F', color: 'white', border: 0, borderRadius: '4px', fontWeight: 600, cursor: pagoProcesando ? 'wait' : 'pointer' }}>{pagoProcesando ? 'Procesando...' : 'Confirmar pago'}</button>
+            </div>
+          </section>
+        </div>
+      );
+    })()}
     {(encomiendaConsultada || resumenRegistrado) && (() => {
       const reporte = resumenRegistrado || encomiendaConsultada;
       return (

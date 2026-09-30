@@ -17,7 +17,7 @@ import static org.mockito.Mockito.when;
 class ClienteControllerTest {
 
     private final ClienteRepository clienteRepository = mock(ClienteRepository.class);
-    private final ClienteController clienteController = new ClienteController(clienteRepository);
+    private final ClienteController clienteController = new ClienteController();
 
     @Test
     void rechazaDniConFormatoInvalido() {
