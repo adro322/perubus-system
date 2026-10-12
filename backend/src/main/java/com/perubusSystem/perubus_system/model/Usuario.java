@@ -1,5 +1,6 @@
 package com.perubusSystem.perubus_system.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -18,6 +19,7 @@ public class Usuario {
     private String username;
 
     @Column(columnDefinition = "TEXT")
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
 
     @Column(columnDefinition = "TEXT")

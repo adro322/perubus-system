@@ -27,6 +27,10 @@ public class Manifiesto {
     @Column(columnDefinition = "DECIMAL(10,2)")
     private Double pesoTotalCarga;
 
+    // Capacidad de la bodega del bus (RF-07: validar peso total vs capacidad)
+    @Column(columnDefinition = "DECIMAL(10,2)")
+    private Double capacidadKg;
+
     public Manifiesto() {
     }
 }
