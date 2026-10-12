@@ -28,10 +28,18 @@ export default function Dashboard() {
   const [errorConsulta, setErrorConsulta] = useState('');
   const [destinatarioForm, setDestinatarioForm] = useState({ numDocumento: '', nombres: '', apellidos: '', telefono: '', correo: '' });
   const [descripcion, setDescripcion] = useState('');
+  const [avisoDocumento, setAvisoDocumento] = useState<{ vista: string; texto: string; ok: boolean } | null>(null);
+  const [listaManifiestos, setListaManifiestos] = useState<any[]>([]);
+  const [manifiestoForm, setManifiestoForm] = useState({ numBus: '', ruta: '', fechaViaje: '', capacidadKg: '' });
+  const [encomiendaAAsignar, setEncomiendaAAsignar] = useState<any>(null);
+  const [manifiestoElegido, setManifiestoElegido] = useState('');
+  const [asignando, setAsignando] = useState(false);
+  const [manifiestoImprimir, setManifiestoImprimir] = useState<any>(null);
 
   useEffect(() => {
     if (vistaActual === 'lista_clientes') cargarClientes();
     if (vistaActual === 'lista_encomiendas') cargarEncomiendas();
+    if (vistaActual === 'lista_manifiestos') cargarManifiestos();
   }, [vistaActual]);
 
   const cargarClientes = async () => {
@@ -85,6 +93,86 @@ export default function Dashboard() {
         ? 'No se encontró una encomienda con ese tracking.'
         : 'No se pudo consultar la encomienda.');
     }
+  };
+
+  // Autocompleta nombres/apellidos (o razón social) al escribir 8 (DNI) u 11 (RUC) dígitos.
+  // Si la consulta falla, los campos siguen editables a mano.
+  const autocompletarDocumento = async (
+    numero: string,
+    vista: string,
+    aplicar: (nombres: string, apellidos: string) => void
+  ) => {
+    if (numero.length !== 8 && numero.length !== 11) { setAvisoDocumento(null); return; }
+    try {
+      const res = await axios.get(`http://localhost:8080/api/documentos/${numero}`);
+      aplicar(res.data.nombres || '', res.data.apellidos || '');
+      setAvisoDocumento({
+        vista, ok: true,
+        texto: res.data.origen === 'LOCAL'
+          ? `${res.data.tipo} ya registrado: datos completados.`
+          : `${res.data.tipo} consultado: datos completados automáticamente.`
+      });
+    } catch (error: any) {
+      setAvisoDocumento({
+        vista, ok: false,
+        texto: (error.response?.data?.mensaje || 'No se pudo consultar el documento') + ' Complete los datos manualmente.'
+      });
+    }
+  };
+
+  const cargarManifiestos = async () => {
+    try {
+      const res = await axios.get('http://localhost:8080/api/manifiestos');
+      setListaManifiestos(res.data);
+    } catch (error) { console.error("Error al cargar manifiestos"); }
+  };
+
+  const crearManifiesto = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await axios.post('http://localhost:8080/api/manifiestos', {
+        ...manifiestoForm,
+        capacidadKg: Number(manifiestoForm.capacidadKg)
+      });
+      mostrarMensaje('Manifiesto creado exitosamente');
+      setManifiestoForm({ numBus: '', ruta: '', fechaViaje: '', capacidadKg: '' });
+      cargarManifiestos();
+    } catch (error: any) {
+      alert(error.response?.data?.mensaje || 'Error al crear el manifiesto');
+    }
+  };
+
+  const abrirAsignacion = (encomienda: any) => {
+    setEncomiendaAAsignar(encomienda);
+    setManifiestoElegido('');
+    cargarManifiestos();
+  };
+
+  const asignarAManifiesto = async () => {
+    if (!encomiendaAAsignar || !manifiestoElegido || asignando) return;
+    setAsignando(true);
+    try {
+      await axios.post(`http://localhost:8080/api/manifiestos/${manifiestoElegido}/encomiendas`, {
+        codigosTracking: [encomiendaAAsignar.codigoTracking]
+      });
+      setListaEncomiendas((actual: any[]) => actual.map(enc =>
+        enc.codigoTracking === encomiendaAAsignar.codigoTracking
+          ? { ...enc, estadoLogistico: 'En tránsito' }
+          : enc
+      ));
+      mostrarMensaje(`Encomienda ${encomiendaAAsignar.codigoTracking} asignada al manifiesto`);
+      setEncomiendaAAsignar(null);
+    } catch (error: any) {
+      alert(error.response?.data?.mensaje || 'No se pudo asignar la encomienda');
+    } finally {
+      setAsignando(false);
+    }
+  };
+
+  const imprimirManifiesto = (manifiesto: any) => {
+    setManifiestoImprimir(manifiesto);
+    window.addEventListener('afterprint', () => setManifiestoImprimir(null), { once: true });
+    setTimeout(() => window.print(), 100);
   };
 
   const imprimirEncomienda = () => {
@@ -219,6 +307,9 @@ export default function Dashboard() {
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Directorio</div>
           <button onClick={() => setVistaActual('registro_cliente')} style={obtenerEstiloMenu(vistaActual === 'registro_cliente')}>Nuevo Cliente</button>
           <button onClick={() => setVistaActual('lista_clientes')} style={obtenerEstiloMenu(vistaActual === 'lista_clientes')}>Cartera de Clientes</button>
+
+          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Logística</div>
+          <button onClick={() => setVistaActual('lista_manifiestos')} style={obtenerEstiloMenu(vistaActual === 'lista_manifiestos')}>Manifiestos de Carga</button>
         </div>
 
         <button onClick={() => { sessionStorage.removeItem('idUsuario'); navigate('/'); }} style={{ padding: '20px', backgroundColor: '#1a1a27', color: '#ff4d4d', border: 'none', cursor: 'pointer', borderTop: '1px solid #2B2B40', textAlign: 'left', fontWeight: 'bold' }}>
@@ -277,8 +368,8 @@ export default function Dashboard() {
                 <div style={{ display: 'flex', gap: '15px', marginTop: '10px' }}>
                   <input 
                     type="text" 
-                    placeholder="Ingrese DNI del cliente" 
-                    maxLength={8} /* <-- Límite de 8 caracteres */
+                    placeholder="Ingrese DNI o RUC del cliente" 
+                    maxLength={11} /* DNI = 8, RUC = 11 */
                     value={dniBuscado} 
                     onChange={e => {
                       // Reemplaza cualquier cosa que NO sea un número por vacío
@@ -329,11 +420,19 @@ export default function Dashboard() {
                   <div style={{ gridColumn: 'span 2', padding: '15px', backgroundColor: '#fff', border: '1px dashed #D32F2F', borderRadius: '6px' }}>
                     <label style={{...labelStyle, color: '#D32F2F'}}>Paso 2: Datos del Destinatario</label>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginTop: '10px' }}>
-                      <input type="text" placeholder="DNI Destinatario" maxLength={8} required value={destinatarioForm.numDocumento} onChange={e => setDestinatarioForm({...destinatarioForm, numDocumento: e.target.value.replace(/\D/g, '')})} style={inputStyle} />
+                      <input type="text" placeholder="DNI o RUC Destinatario" maxLength={11} required value={destinatarioForm.numDocumento} onChange={e => {
+                        const numero = e.target.value.replace(/\D/g, '');
+                        setDestinatarioForm({...destinatarioForm, numDocumento: numero});
+                        autocompletarDocumento(numero, 'destinatario', (nombres, apellidos) =>
+                          setDestinatarioForm(f => ({ ...f, numDocumento: numero, nombres, apellidos })));
+                      }} style={inputStyle} />
                       <input type="text" placeholder="Nombres" required value={destinatarioForm.nombres} onChange={e => setDestinatarioForm({...destinatarioForm, nombres: e.target.value})} style={inputStyle} />
                       <input type="text" placeholder="Apellidos" required value={destinatarioForm.apellidos} onChange={e => setDestinatarioForm({...destinatarioForm, apellidos: e.target.value})} style={inputStyle} />
                       <input type="text" placeholder="Teléfono" maxLength={9} required value={destinatarioForm.telefono} onChange={e => setDestinatarioForm({...destinatarioForm, telefono: e.target.value.replace(/\D/g, '')})} style={inputStyle} />
                       <input type="email" placeholder="Correo (Opcional)" value={destinatarioForm.correo} onChange={e => setDestinatarioForm({...destinatarioForm, correo: e.target.value})} style={inputStyle} />
+                      {avisoDocumento?.vista === 'destinatario' && (
+                        <div style={{ gridColumn: 'span 3', fontSize: '12px', color: avisoDocumento.ok ? '#2E7D32' : '#B26A00' }}>{avisoDocumento.texto}</div>
+                      )}
                     </div>
                   </div>
 
@@ -373,7 +472,16 @@ export default function Dashboard() {
             <form onSubmit={registrarCliente} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
               <h2 style={{ gridColumn: 'span 2', color: '#1E1E2D', marginBottom: '10px', fontSize: '24px' }}>Nuevo Cliente</h2>
               
-              <div><label style={labelStyle}>Documento (DNI)</label><input type="text" maxLength={8} required value={clienteForm.numDocumento} onChange={e => setClienteForm({...clienteForm, numDocumento: e.target.value})} style={inputStyle} /></div>
+              <div><label style={labelStyle}>Documento (DNI o RUC)</label><input type="text" maxLength={11} required value={clienteForm.numDocumento} onChange={e => {
+                const numero = e.target.value.replace(/\D/g, '');
+                setClienteForm({...clienteForm, numDocumento: numero});
+                autocompletarDocumento(numero, 'cliente', (nombres, apellidos) =>
+                  setClienteForm(f => ({ ...f, numDocumento: numero, nombres, apellidos })));
+              }} style={inputStyle} />
+                {avisoDocumento?.vista === 'cliente' && (
+                  <div style={{ fontSize: '12px', marginTop: '6px', color: avisoDocumento.ok ? '#2E7D32' : '#B26A00' }}>{avisoDocumento.texto}</div>
+                )}
+              </div>
               <div><label style={labelStyle}>Teléfono Móvil</label><input type="text" maxLength={9} required value={clienteForm.telefono} onChange={e => setClienteForm({...clienteForm, telefono: e.target.value})} style={inputStyle} /></div>
               <div><label style={labelStyle}>Nombres</label><input type="text" required value={clienteForm.nombres} onChange={e => setClienteForm({...clienteForm, nombres: e.target.value})} style={inputStyle} /></div>
               <div><label style={labelStyle}>Apellidos</label><input type="text" required value={clienteForm.apellidos} onChange={e => setClienteForm({...clienteForm, apellidos: e.target.value})} style={inputStyle} /></div>
@@ -390,7 +498,7 @@ export default function Dashboard() {
             <div>
               <h2 style={{ color: '#1E1E2D', marginBottom: '20px', fontSize: '24px' }}>Directorio de Clientes</h2>
               <table style={tableStyle}>
-                <thead><tr><th style={thStyle}>DNI</th><th style={thStyle}>Cliente</th><th style={thStyle}>Teléfono</th><th style={thStyle}>Correo</th></tr></thead>
+                <thead><tr><th style={thStyle}>Documento</th><th style={thStyle}>Cliente</th><th style={thStyle}>Teléfono</th><th style={thStyle}>Correo</th></tr></thead>
                 <tbody>
                   {listaClientes.map((c: any) => (
                     <tr key={c.idCliente} style={trStyle}>
@@ -483,7 +591,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             disabled={enc.estadoLogistico?.toLowerCase() !== 'en origen'}
-                            onClick={() => mostrarMensaje(`La encomienda ${enc.codigoTracking} está lista para asignarle un manifiesto.`)}
+                            onClick={() => abrirAsignacion(enc)}
                             style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: enc.estadoLogistico?.toLowerCase() === 'en origen' ? '#3F4254' : '#B5B5C3', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: enc.estadoLogistico?.toLowerCase() === 'en origen' ? 'pointer' : 'not-allowed' }}
                           >
                             Asignar Manifiesto{enc.estadoLogistico?.toLowerCase() !== 'en origen' ? ' 🔒' : ''}
@@ -497,9 +605,103 @@ export default function Dashboard() {
             </div>
           )}
 
+          {vistaActual === 'lista_manifiestos' && (
+            <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+              <h2 style={{ color: '#1E1E2D', marginTop: 0 }}>Manifiestos de Carga</h2>
+              <form onSubmit={crearManifiesto} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto', gap: '12px', alignItems: 'end', marginBottom: '30px' }}>
+                <div><label style={labelStyle}>N° de bus</label><input required value={manifiestoForm.numBus} onChange={e => setManifiestoForm({ ...manifiestoForm, numBus: e.target.value })} style={inputStyle} placeholder="BUS-01" /></div>
+                <div>
+                  <label style={labelStyle}>Ruta</label>
+                  <select required value={manifiestoForm.ruta} onChange={e => setManifiestoForm({ ...manifiestoForm, ruta: e.target.value })} style={inputStyle}>
+                    <option value="">Seleccione</option>
+                    {['Lima-Ica', 'Ica-Lima', 'Lima-Nazca', 'Nazca-Lima', 'Ica-Nazca', 'Nazca-Ica', 'Lima-Pisco', 'Pisco-Lima', 'Ica-Pisco', 'Pisco-Ica'].map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div><label style={labelStyle}>Fecha de viaje</label><input required type="date" value={manifiestoForm.fechaViaje} onChange={e => setManifiestoForm({ ...manifiestoForm, fechaViaje: e.target.value })} style={inputStyle} /></div>
+                <div><label style={labelStyle}>Capacidad (Kg)</label><input required type="number" min="1" step="0.01" value={manifiestoForm.capacidadKg} onChange={e => setManifiestoForm({ ...manifiestoForm, capacidadKg: e.target.value })} style={inputStyle} /></div>
+                <button type="submit" style={btnPrimary}>Crear</button>
+              </form>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>N°</th>
+                    <th style={thStyle}>Bus</th>
+                    <th style={thStyle}>Ruta</th>
+                    <th style={thStyle}>Fecha</th>
+                    <th style={thStyle}>Carga / Capacidad</th>
+                    <th style={thStyle}>Bultos</th>
+                    <th style={thStyle}>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {listaManifiestos.map((m: any) => (
+                    <tr key={m.idManifiesto} style={trStyle}>
+                      <td style={{ ...tdStyle, fontWeight: 'bold', color: '#D32F2F' }}>{m.idManifiesto}</td>
+                      <td style={tdStyle}>{m.numBus}</td>
+                      <td style={tdStyle}>{m.ruta}</td>
+                      <td style={tdStyle}>{m.fechaViaje}</td>
+                      <td style={tdStyle}>{Number(m.pesoTotalCarga || 0).toFixed(2)} / {Number(m.capacidadKg || 0).toFixed(2)} Kg</td>
+                      <td style={tdStyle}>{m.encomiendas.length}</td>
+                      <td style={tdStyle}>
+                        <button type="button" onClick={() => imprimirManifiesto(m)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Imprimir / PDF</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {listaManifiestos.length === 0 && <p style={{ color: '#777' }}>Aún no hay manifiestos. Cree uno con el formulario.</p>}
+            </div>
+          )}
+
         </div>
       </div>
     </div>
+    {encomiendaAAsignar && (
+      <div onClick={() => !asignando && setEncomiendaAAsignar(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}>
+        <section role="dialog" aria-modal="true" onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: '460px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}>
+          <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>Asignar a manifiesto</h2>
+          <p style={{ margin: '6px 0 16px', color: '#777' }}>Encomienda {encomiendaAAsignar.codigoTracking} · {encomiendaAAsignar.peso} Kg</p>
+          <label style={labelStyle}>Manifiesto</label>
+          <select value={manifiestoElegido} onChange={e => setManifiestoElegido(e.target.value)} style={inputStyle}>
+            <option value="">Seleccione un manifiesto</option>
+            {listaManifiestos.map((m: any) => (
+              <option key={m.idManifiesto} value={m.idManifiesto}>
+                N° {m.idManifiesto} · {m.numBus} · {m.ruta} · {m.fechaViaje} ({Number(m.pesoTotalCarga || 0).toFixed(0)}/{Number(m.capacidadKg || 0).toFixed(0)} Kg)
+              </option>
+            ))}
+          </select>
+          {listaManifiestos.length === 0 && <p style={{ fontSize: '12px', color: '#777' }}>No hay manifiestos. Cree uno primero en "Manifiestos de Carga".</p>}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+            <button type="button" disabled={asignando} onClick={() => setEncomiendaAAsignar(null)} style={{ padding: '10px 14px', backgroundColor: 'white', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
+            <button type="button" disabled={asignando || !manifiestoElegido} onClick={asignarAManifiesto} style={{ padding: '10px 14px', backgroundColor: '#D32F2F', color: 'white', border: 0, borderRadius: '4px', fontWeight: 600, cursor: asignando || !manifiestoElegido ? 'not-allowed' : 'pointer' }}>{asignando ? 'Asignando...' : 'Asignar'}</button>
+          </div>
+        </section>
+      </div>
+    )}
+    {manifiestoImprimir && (
+      <div className="manifiesto-impresion">
+        <h1>PeruBus Cargo · Manifiesto de Carga N° {manifiestoImprimir.idManifiesto}</h1>
+        <div className="manifiesto-cabecera">
+          <span><strong>Bus:</strong> {manifiestoImprimir.numBus}</span>
+          <span><strong>Ruta:</strong> {manifiestoImprimir.ruta}</span>
+          <span><strong>Fecha de viaje:</strong> {manifiestoImprimir.fechaViaje}</span>
+          <span><strong>Capacidad:</strong> {Number(manifiestoImprimir.capacidadKg || 0).toFixed(2)} Kg</span>
+        </div>
+        <table>
+          <thead>
+            <tr><th>N°</th><th>Tracking</th><th>Descripción</th><th>Remitente</th><th>Destinatario</th><th>Peso (Kg)</th></tr>
+          </thead>
+          <tbody>
+            {manifiestoImprimir.encomiendas.map((e: any, i: number) => (
+              <tr key={e.codigoTracking}>
+                <td>{i + 1}</td><td>{e.codigoTracking}</td><td>{e.descripcion}</td><td>{e.remitente}</td><td>{e.destinatario}</td><td>{Number(e.peso).toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="manifiesto-total"><strong>Total de bultos:</strong> {manifiestoImprimir.encomiendas.length} · <strong>Peso total:</strong> {Number(manifiestoImprimir.pesoTotalCarga || 0).toFixed(2)} Kg</p>
+      </div>
+    )}
     {pagoSeleccionado && (() => {
       const subtotal = Number(pagoSeleccionado.tarifaBase || 0);
       const igv = Math.round((subtotal * 0.18 + Number.EPSILON) * 100) / 100;
@@ -539,7 +741,7 @@ export default function Dashboard() {
         </div>
       );
     })()}
-    {(encomiendaConsultada || resumenRegistrado) && (() => {
+    {!manifiestoImprimir && (encomiendaConsultada || resumenRegistrado) && (() => {
       const reporte = resumenRegistrado || encomiendaConsultada;
       return (
         <div className="ticket-impresion">

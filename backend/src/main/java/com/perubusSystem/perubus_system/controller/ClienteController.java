@@ -30,6 +30,9 @@ public class ClienteController {
 
     @GetMapping("/buscar/{dni}")
     public ResponseEntity<?> buscarPorDni(@PathVariable String dni) {
+        if (dni == null || !dni.matches("\\d{8}|\\d{11}")) {
+            return ResponseEntity.badRequest().body("El documento debe tener 8 dígitos (DNI) u 11 dígitos (RUC).");
+        }
         return clienteRepository.findByNumDocumento(dni)
                 .map(c -> ResponseEntity.ok(ClienteRespuesta.desde(c)))
                 .orElse(ResponseEntity.notFound().build());
