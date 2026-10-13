@@ -1,0 +1,457 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+:root {
+  --dash-navy: #102b50;
+  --dash-navy-dark: #091d36;
+  --dash-red: #d71935;
+  --dash-red-hover: #b9102a;
+  --dash-bg: #f3f6fb;
+  --dash-border: #e1e8f1;
+  --dash-text: #1b2e49;
+  --dash-muted: #75849a;
+  --dash-white: #ffffff;
+}
+
+/* Fondo general y tipografía */
+
+.app-shell,
+.app-shell * {
+  box-sizing: border-box;
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+}
+
+.app-shell {
+  min-height: 100vh !important;
+  height: 100vh !important;
+  background: var(--dash-bg) !important;
+  color: var(--dash-text);
+}
+
+/* Barra lateral */
+
+.app-shell > div:first-child {
+  width: 260px !important;
+  min-width: 240px;
+  flex-shrink: 0;
+  background: linear-gradient(
+    180deg,
+    var(--dash-navy-dark),
+    var(--dash-navy)
+  ) !important;
+  color: #d6e2f2 !important;
+  box-shadow: 5px 0 24px rgba(10, 29, 54, 0.08);
+  z-index: 2;
+}
+
+.app-shell > div:first-child > div:first-child {
+  padding: 20px 12px 14px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.app-shell > div:first-child img {
+  width: 220px !important;
+  max-height: 90px;
+  object-fit: contain;
+  padding: 12px !important;
+}
+
+.app-shell > div:first-child > div:nth-child(2) {
+  padding: 26px 16px !important;
+  gap: 8px !important;
+}
+
+.app-shell > div:first-child > div:nth-child(2) > div {
+  color: #8fa9c9 !important;
+  font-size: 10px !important;
+  font-weight: 800;
+  letter-spacing: 1.8px !important;
+  margin-top: 20px !important;
+  margin-bottom: 7px !important;
+}
+
+.app-shell > div:first-child > div:nth-child(2) > div:first-child {
+  margin-top: 0 !important;
+}
+
+.app-shell > div:first-child > div:nth-child(2) button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 45px;
+  padding: 12px 14px !important;
+  border: 1px solid transparent !important;
+  border-radius: 9px !important;
+  text-align: left;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: #c4d3e6 !important;
+  background: transparent !important;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.app-shell > div:first-child > div:nth-child(2) button:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #fff !important;
+}
+
+/* Botón de cierre de sesión */
+
+.app-shell > div:first-child > button:last-child {
+  margin-top: auto;
+  padding: 19px 22px !important;
+  background: rgba(0, 0, 0, 0.12) !important;
+  color: #ff8d9c !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  font-size: 12px !important;
+  transition: background 0.2s, color 0.2s;
+}
+
+.app-shell > div:first-child > button:last-child:hover {
+  background: rgba(215, 25, 53, 0.17) !important;
+  color: #fff !important;
+}
+
+/* Área de trabajo */
+
+.app-shell > div:nth-child(2) {
+  min-width: 0;
+  padding: 32px !important;
+  background:
+    radial-gradient(
+      ellipse at top right,
+      rgba(215, 225, 243, 0.38),
+      transparent 35%
+    ),
+    var(--dash-bg) !important;
+}
+
+/* Mensajes de confirmación */
+
+.app-shell > div:nth-child(2) > div:first-child:not(:has(> div)) {
+  border: 1px solid #bce8d0;
+  border-left: 4px solid #16a36a !important;
+  border-radius: 10px !important;
+  background: #edfbf4 !important;
+  color: #16734d !important;
+  font-size: 13px;
+  box-shadow: 0 5px 15px rgba(20, 100, 70, 0.04) !important;
+}
+
+/* Paneles y formularios principales */
+
+.app-shell > div:nth-child(2) > div {
+  border: 1px solid rgba(222, 230, 241, 0.9);
+  border-radius: 16px !important;
+  background: #fff !important;
+  box-shadow: 0 10px 35px rgba(21, 45, 77, 0.055) !important;
+}
+
+.app-shell h2 {
+  color: var(--dash-navy) !important;
+  font-size: 25px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.8px;
+  line-height: 1.35;
+}
+
+.app-shell h3 {
+  color: var(--dash-navy) !important;
+  font-weight: 800;
+}
+
+/* Etiquetas e inputs */
+
+.app-shell label {
+  display: block;
+  margin-bottom: 8px;
+  color: #344b6a !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+
+.app-shell input,
+.app-shell select,
+.app-shell textarea {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 11px 13px !important;
+  border: 1px solid #d8e2ef !important;
+  border-radius: 8px !important;
+  outline: none;
+  background: #f9fbfe !important;
+  color: var(--dash-text) !important;
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif !important;
+  font-size: 13px !important;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.app-shell input::placeholder {
+  color: #98a6ba;
+}
+
+.app-shell input:focus,
+.app-shell select:focus,
+.app-shell textarea:focus {
+  border-color: #4a79b3 !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 4px rgba(55, 106, 169, 0.1) !important;
+}
+
+.app-shell input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* Botones generales */
+
+.app-shell button {
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.2s;
+}
+
+.app-shell button:not(:disabled):hover {
+  filter: brightness(0.97);
+}
+
+.app-shell button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed !important;
+}
+
+.app-shell button:focus-visible {
+  outline: 3px solid rgba(60, 119, 187, 0.3);
+  outline-offset: 2px;
+}
+
+/* Botones de acciones: rojo y azul */
+
+.app-shell button[style*="background-color: rgb(211, 47, 47)"],
+.app-shell button[style*="background-color: rgb(211, 47, 47)"]:not(:disabled) {
+  border-radius: 8px !important;
+  font-weight: 700 !important;
+}
+
+.app-shell button[style*="background-color: rgb(30, 30, 45)"] {
+  background: var(--dash-navy) !important;
+  border-radius: 8px !important;
+}
+
+.app-shell button[style*="background-color: rgb(30, 30, 45)"]:hover {
+  background: #1d4778 !important;
+}
+
+/* Bloques de identificación del remitente y destinatario */
+
+.app-shell form > div,
+.app-shell form > div[style*="grid-column"] {
+  min-width: 0;
+}
+
+.app-shell div[style*="background-color: rgb(248, 249, 250)"] {
+  background: #f5f8fd !important;
+  border-color: #e1e8f1 !important;
+  border-radius: 11px !important;
+}
+
+.app-shell div[style*="border: 1px dashed"] {
+  border: 1px dashed #d5a2aa !important;
+  border-radius: 11px !important;
+  background: #fffafb !important;
+}
+
+.app-shell div[style*="border: 1px solid rgb(211, 47, 47)"] {
+  border-color: #d7e1ef !important;
+  border-radius: 10px !important;
+}
+
+/* Tablas */
+
+.app-shell table {
+  width: 100%;
+  border-collapse: separate !important;
+  border-spacing: 0;
+  overflow: hidden;
+  border: 1px solid #e3eaf3;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.app-shell th {
+  padding: 15px 13px !important;
+  background: #f1f5fb !important;
+  color: #5e718d !important;
+  border-bottom: 1px solid #e0e8f2 !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.8px !important;
+}
+
+.app-shell td {
+  padding: 14px 13px !important;
+  border-bottom: 1px solid #edf1f6 !important;
+  color: #354963 !important;
+  font-size: 12px !important;
+  overflow-wrap: anywhere;
+}
+
+.app-shell tbody tr {
+  transition: background 0.15s;
+}
+
+.app-shell tbody tr:hover {
+  background: #f5f8fd !important;
+}
+
+.app-shell tbody tr:last-child td {
+  border-bottom: none !important;
+}
+
+/* Mensajes de error */
+
+.app-shell div[style*="background-color: rgb(255, 235, 238)"] {
+  border: 1px solid #f5c8ce;
+  border-radius: 8px !important;
+  background: #fff1f2 !important;
+  color: #b42336 !important;
+}
+
+/* Resumen de encomienda */
+
+.app-shell div[style*="border: 1px solid rgb(76, 175, 80)"] {
+  border: 1px solid #b8e4cd !important;
+  border-radius: 12px !important;
+  background: #fbfffc;
+}
+
+.app-shell div[style*="border-left: 5px solid"] {
+  border-left: 4px solid var(--dash-red) !important;
+  border-radius: 8px !important;
+}
+
+/* Modal de pago */
+
+body:has([role="dialog"]) {
+  overflow-x: hidden;
+}
+
+[role="dialog"] {
+  border: 1px solid #e0e7f0;
+  border-radius: 16px !important;
+  box-shadow: 0 25px 80px rgba(8, 26, 50, 0.3) !important;
+}
+
+[role="dialog"] h2 {
+  color: var(--dash-navy) !important;
+  font-size: 23px !important;
+}
+
+[role="dialog"] button {
+  border-radius: 8px !important;
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif !important;
+  font-weight: 700;
+}
+
+[role="dialog"] button:disabled {
+  opacity: 0.6;
+}
+
+/* Mantener intacta la impresión de comprobantes */
+
+.ticket-impresion {
+  display: none;
+}
+
+@media print {
+  .app-shell {
+    display: none !important;
+  }
+}
+
+/* Adaptación para pantallas pequeñas */
+
+@media (max-width: 1000px) {
+  .app-shell > div:first-child {
+    width: 225px !important;
+    min-width: 210px;
+  }
+
+  .app-shell > div:nth-child(2) {
+    padding: 22px !important;
+  }
+
+  .app-shell > div:nth-child(2) > div {
+    padding: 25px !important;
+  }
+}
+
+@media (max-width: 700px) {
+  .app-shell {
+    height: auto !important;
+    min-height: 100vh;
+    flex-direction: column;
+  }
+
+  .app-shell > div:first-child {
+    width: 100% !important;
+    min-width: 0;
+    flex-shrink: 0;
+  }
+
+  .app-shell > div:first-child > div:first-child {
+    padding: 8px !important;
+  }
+
+  .app-shell > div:first-child img {
+    width: 170px !important;
+    max-height: 65px;
+  }
+
+  .app-shell > div:first-child > div:nth-child(2) {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 12px !important;
+  }
+
+  .app-shell > div:first-child > div:nth-child(2) > div {
+    grid-column: 1 / -1;
+    margin-top: 8px !important;
+  }
+
+  .app-shell > div:first-child > button:last-child {
+    padding: 14px 18px !important;
+  }
+
+  .app-shell > div:nth-child(2) {
+    overflow: visible !important;
+    padding: 14px !important;
+  }
+
+  .app-shell > div:nth-child(2) > div {
+    padding: 18px !important;
+  }
+
+  .app-shell form {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .app-shell form > div {
+    grid-column: 1 / -1 !important;
+  }
+
+  .app-shell table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .app-shell th,
+  .app-shell td {
+    padding: 11px !important;
+  }
+}

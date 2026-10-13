@@ -1,88 +1,202 @@
+
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import './Login.css';
+import logo from '../assets/logo.png';
 
 export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
+
     try {
-      const res = await axios.post('http://localhost:8080/api/usuarios/login', {
-        username, 
-        password 
-      });
-      sessionStorage.setItem('idUsuario', String(res.data.idUsuario));
-      navigate('/dashboard'); 
-    } catch (error) {
-      setError("Credenciales incorrectas o acceso denegado.");
+      const res = await axios.post(
+        'http://localhost:8080/api/usuarios/login',
+        { username, password }
+      );
+
+      sessionStorage.setItem(
+        'idUsuario',
+        String(res.data.idUsuario)
+      );
+
+      navigate('/dashboard');
+    } catch {
+      setError('Credenciales incorrectas o acceso denegado.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', width: '100vw', fontFamily: "'Inter', 'Segoe UI', sans-serif" }}>
-      
-      {/* MITAD IZQUIERDA: IMAGEN DE FONDO COMPLETA */}
-      <div style={{ 
-        flex: 1, 
-        backgroundImage: 'url("https://img.magnific.com/foto-gratis/estanterias-almacenamiento-almacen-cajas-carton_23-2152001531.jpg?semt=ais_hybrid&w=740&q=80")', 
-        backgroundSize: 'cover', 
-        backgroundPosition: 'center', 
-        display: 'flex', 
-        flexDirection: 'column', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        position: 'relative'
-      }}>
-        {/* Filtro oscuro sobre la imagen para que el texto resalte */}
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(30, 30, 45, 0.75)' }}></div>
-        
-        <div style={{ position: 'relative', zIndex: 1, padding: '40px', textAlign: 'center', color: 'white', maxWidth: '80%' }}>
-          <h1 style={{ fontSize: '42px', fontWeight: '800', marginBottom: '15px', letterSpacing: '1px' }}>PeruBus Cargo</h1>
-          <p style={{ color: '#E4E6EF', fontSize: '16px', lineHeight: '1.6' }}>La tranquilidad de saber que tu carga viaja segura hacia su destino.</p>
-        </div>
-      </div>
+    <main className="login-page">
+      <section className="login-visual">
+        <div className="visual-overlay" />
 
-      {/* MITAD DERECHA: FORMULARIO */}
-      <div style={{ flex: 1, backgroundColor: 'white', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '40px' }}>
-        
-        <div style={{ width: '100%', maxWidth: '420px' }}>
-          {/* AQUÍ VA TU LOGO PEQUEÑO */}
-          <div style={{ marginBottom: '40px', textAlign: 'left' }}>
-            <img src="/src/assets/logo.png" alt="Logo PerúBus" style={{ width: '260px', maxWidth: '100%' }} />
+        <div className="visual-content">
+          <div className="visual-brand">
+            <span className="brand-mark">PB</span>
+            <div>
+              <strong>Peru<span>Bus</span></strong>
+              <small>CARGO</small>
+            </div>
           </div>
 
-          <h3 style={{ color: '#1E1E2D', fontSize: '26px', marginBottom: '8px' }}>¡Hola de nuevo!</h3>
-          <p style={{ color: '#888', fontSize: '14px', marginBottom: '35px' }}>Ingresa tus credenciales para acceder al panel administrativo.</p>
+          <div className="visual-eyebrow">
+            LOGÍSTICA QUE CONECTA PERÚ
+          </div>
 
-          {error && <div style={{ padding: '12px', backgroundColor: '#ffebee', color: '#c62828', fontSize: '13px', borderRadius: '6px', marginBottom: '20px', textAlign: 'center', fontWeight: '500' }}>{error}</div>}
+          <h1>
+            Tu carga.
+            <br />
+            Nuestro <span>compromiso.</span>
+          </h1>
 
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div>
-              <label style={labelStyle}>Usuario</label>
-              <input type="text" placeholder="Nombre de usuario" value={username} onChange={(e) => setUsername(e.target.value)} required style={inputStyle} />
+          <p className="visual-description">
+            Gestiona tus operaciones de transporte y mantén
+            el control de cada envío desde un solo lugar.
+          </p>
+
+          <div className="feature-list">
+            <div className="feature-item">
+              <div className="feature-icon">✓</div>
+              <div>
+                <strong>Seguridad</strong>
+                <p>Tu carga siempre protegida</p>
+              </div>
             </div>
-            <div>
-              <label style={labelStyle}>Contraseña</label>
-              <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} required style={inputStyle} />
+
+            <div className="feature-item">
+              <div className="feature-icon">◷</div>
+              <div>
+                <strong>Trazabilidad</strong>
+                <p>Seguimiento de tus operaciones</p>
+              </div>
             </div>
-            <button type="submit" style={btnPrimary}>Ingresar al Sistema</button>
+
+            <div className="feature-item">
+              <div className="feature-icon">⇢</div>
+              <div>
+                <strong>Eficiencia</strong>
+                <p>Control en cada etapa del envío</p>
+              </div>
+            </div>
+
+            <div className="feature-item">
+              <div className="feature-icon">◇</div>
+              <div>
+                <strong>Confianza</strong>
+                <p>Comprometidos con tu destino</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="visual-bottom">
+            <span className="status-dot" />
+            Tu operación, siempre en movimiento
+          </div>
+        </div>
+
+        <div className="visual-red-stripe" />
+      </section>
+
+      <section className="login-panel">
+        <div className="login-card">
+          <div className="login-brand">
+            <img src={logo} alt="Logo PeruBus Cargo" />
+            <span>PORTAL ADMINISTRATIVO</span>
+          </div>
+
+          <div className="login-heading">
+            <span className="welcome-label">
+              <span /> BIENVENIDO
+            </span>
+            <h2>
+              Inicia <span>sesión</span>
+            </h2>
+            <p>
+              Ingresa tus credenciales para acceder
+              <br className="desktop-break" /> al panel de administración.
+            </p>
+          </div>
+
+          {error && (
+            <div className="login-error" role="alert">
+              <span className="error-symbol">!</span>
+              {error}
+            </div>
+          )}
+
+          <form className="login-form" onSubmit={handleLogin}>
+            <div className="login-field">
+              <label htmlFor="username">Usuario</label>
+              <input
+                id="username"
+                type="text"
+                placeholder="Ingresa tu usuario"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                required
+              />
+            </div>
+
+            <div className="login-field">
+              <label htmlFor="password">Contraseña</label>
+              <input
+                id="password"
+                type="password"
+                placeholder="Ingresa tu contraseña"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+
+            <button
+              className="login-submit"
+              type="submit"
+              disabled={loading}
+            >
+              <span className="submit-arrow">
+                {loading ? '···' : '➜'}
+              </span>
+              {loading ? 'Verificando acceso...' : 'Ingresar al sistema'}
+            </button>
           </form>
 
-          <div style={{ textAlign: 'center', marginTop: '30px', fontSize: '14px', color: '#888' }}>
-            ¿Nuevo personal? <Link to="/register" style={{ color: '#D32F2F', fontWeight: '600', textDecoration: 'none' }}>Solicitar acceso</Link>
+          <div className="login-register">
+            <div className="register-divider">
+              <span />
+              <small>¿Nuevo personal?</small>
+              <span />
+            </div>
+
+            <Link to="/register" className="register-link">
+              <span>＋</span> Solicitar acceso
+            </Link>
+          </div>
+
+          <div className="login-security">
+            <span className="security-icon">✓</span>
+            <span>Acceso exclusivo para personal autorizado</span>
           </div>
         </div>
-        
-      </div>
-    </div>
+
+        <footer className="login-copyright">
+          <span>© {new Date().getFullYear()} PeruBus Cargo.</span>
+          <span>Juntos llegamos más lejos.</span>
+        </footer>
+      </section>
+    </main>
   );
 }
-
-const labelStyle = { display: 'block', marginBottom: '8px', fontSize: '12px', fontWeight: '700', color: '#3F4254', textTransform: 'uppercase' as const, letterSpacing: '0.5px' };
-const inputStyle = { width: '100%', padding: '14px 15px', border: '1px solid #E4E6EF', borderRadius: '8px', boxSizing: 'border-box' as const, fontSize: '15px', backgroundColor: '#FAFAFA', outline: 'none', transition: '0.2s' };
-const btnPrimary = { padding: '16px', backgroundColor: '#D32F2F', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '16px', marginTop: '10px', transition: '0.3s' };
