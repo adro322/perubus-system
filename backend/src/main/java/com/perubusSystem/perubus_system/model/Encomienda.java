@@ -30,6 +30,12 @@ public class Encomienda {
     @Column(columnDefinition = "DECIMAL(10,2)", nullable = false)
     private Double tarifaBase;
 
+    @Column(length = 50)
+    private String ruta;
+
+    @Column(name = "direccion_destinatario", columnDefinition = "TEXT")
+    private String direccionDestinatario;
+
     // --- NUEVAS RELACIONES DE CLIENTE ---
     @ManyToOne
     @JoinColumn(name = "idRemitente", nullable = false)

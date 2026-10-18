@@ -105,7 +105,6 @@ public class EncomiendaController {
     // Métodos DTO privados (Estos se quedan aquí porque son para transformar la
     // salida del endpoint)
     private EncomiendaConsulta convertirAConsulta(Encomienda encomienda) {
-        String ruta = encomienda.getManifiesto() == null ? null : encomienda.getManifiesto().getRuta();
         String fechaViaje = encomienda.getManifiesto() == null || encomienda.getManifiesto().getFechaViaje() == null
                 ? null
                 : encomienda.getManifiesto().getFechaViaje().toString();
@@ -119,7 +118,8 @@ public class EncomiendaController {
                 encomienda.getTarifaBase(),
                 convertirCliente(encomienda.getRemitente()),
                 convertirCliente(encomienda.getDestinatario()),
-                ruta,
+                encomienda.getRuta(),
+                encomienda.getDireccionDestinatario(),
                 fechaViaje,
                 numeroBus);
     }

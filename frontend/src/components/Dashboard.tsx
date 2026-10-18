@@ -28,6 +28,7 @@ export default function Dashboard() {
   const [resumenRegistrado, setResumenRegistrado] = useState<any>(null);
   const [errorConsulta, setErrorConsulta] = useState('');
   const [destinatarioForm, setDestinatarioForm] = useState({ numDocumento: '', nombres: '', apellidos: '', telefono: '', correo: '' });
+  const [direccionDestinatario, setDireccionDestinatario] = useState('');
   const [descripcion, setDescripcion] = useState('');
   const [avisoDocumento, setAvisoDocumento] = useState<{ vista: string; texto: string; ok: boolean } | null>(null);
   const [listaManifiestos, setListaManifiestos] = useState<any[]>([]);
@@ -196,6 +197,7 @@ export default function Dashboard() {
     setTarifa(null);
     setDestino('');
     setDescripcion('');
+    setDireccionDestinatario('');
     setDestinatarioForm({
       numDocumento: '',
       nombres: '',
@@ -263,6 +265,8 @@ export default function Dashboard() {
         peso: parseFloat(peso),
         descripcion: descripcion,
         tarifaBase: tarifa,
+        ruta: destino,
+        direccionDestinatario: direccionDestinatario.trim(),
         remitente: { numDocumento: clienteEncontrado.numDocumento },
         destinatario: { 
             numDocumento: destinatarioForm.numDocumento,
@@ -278,6 +282,7 @@ export default function Dashboard() {
       mostrarMensaje(`Tracking generado: ${res.data.codigoTracking}`);
       
       setPeso(''); setDniBuscado(''); setClienteEncontrado(null); setTarifa(null); setDestino('');
+      setDireccionDestinatario('');
       setDescripcion(''); setDestinatarioForm({ numDocumento: '', nombres: '', apellidos: '', telefono: '', correo: '' });
       
     } catch (error) { 
@@ -348,6 +353,8 @@ export default function Dashboard() {
                     <div><strong>Peso:</strong> {resumenRegistrado.peso} Kg</div>
                     <div><strong>Tarifa:</strong> S/ {Number(resumenRegistrado.tarifaBase).toFixed(2)}</div>
                     <div><strong>Descripción:</strong> {resumenRegistrado.descripcion}</div>
+                    <div><strong>Ruta:</strong> {resumenRegistrado.ruta}</div>
+                    <div><strong>Dirección de entrega:</strong> {resumenRegistrado.direccionDestinatario}</div>
                   </div>
                 </div>
               )}
@@ -412,10 +419,15 @@ export default function Dashboard() {
                     <select required value={destino} onChange={e => { setDestino(e.target.value); setTarifa(null); }} style={inputStyle}>
                       <option value="">Seleccione ruta de envío...</option>
                       <option value="Lima-Ica">Lima - Ica</option>
+                      <option value="Ica-Lima">Ica - Lima</option>
                       <option value="Lima-Nazca">Lima - Nazca</option>
+                      <option value="Nazca-Lima">Nazca - Lima</option>
                       <option value="Ica-Nazca">Ica - Nazca</option>
+                      <option value="Nazca-Ica">Nazca - Ica</option>
                       <option value="Lima-Pisco">Lima - Pisco</option>
+                      <option value="Pisco-Lima">Pisco - Lima</option>
                       <option value="Ica-Pisco">Ica - Pisco</option>
+                      <option value="Pisco-Ica">Pisco - Ica</option>
                     </select>
                   </div>
                   <div style={{ gridColumn: 'span 2', padding: '15px', backgroundColor: '#fff', border: '1px dashed #D32F2F', borderRadius: '6px' }}>
@@ -435,6 +447,11 @@ export default function Dashboard() {
                         <div style={{ gridColumn: 'span 3', fontSize: '12px', color: avisoDocumento.ok ? '#2E7D32' : '#B26A00' }}>{avisoDocumento.texto}</div>
                       )}
                     </div>
+                  </div>
+
+                  <div style={{ gridColumn: 'span 2' }}>
+                    <label style={labelStyle}>Dirección de entrega del destinatario</label>
+                    <input type="text" placeholder="Distrito, calle, número y referencia" required maxLength={255} value={direccionDestinatario} onChange={e => setDireccionDestinatario(e.target.value)} style={inputStyle} />
                   </div>
 
                   {/* --- NUEVO BLOQUE: DESCRIPCIÓN --- */}
@@ -553,6 +570,7 @@ export default function Dashboard() {
                     <div><strong>Remitente:</strong> {encomiendaConsultada.remitente?.nombres} {encomiendaConsultada.remitente?.apellidos}</div>
                     <div><strong>Destinatario:</strong> {encomiendaConsultada.destinatario?.nombres} {encomiendaConsultada.destinatario?.apellidos}</div>
                     {encomiendaConsultada.ruta && <div><strong>Ruta:</strong> {encomiendaConsultada.ruta}</div>}
+                    {encomiendaConsultada.direccionDestinatario && <div><strong>Dirección de entrega:</strong> {encomiendaConsultada.direccionDestinatario}</div>}
                     {encomiendaConsultada.fechaViaje && <div><strong>Viaje:</strong> {encomiendaConsultada.fechaViaje}</div>}
                   </div>
                 </div>
@@ -562,6 +580,7 @@ export default function Dashboard() {
                   <tr>
                     <th style={thStyle}>Tracking</th>
                     <th style={thStyle}>Remitente</th> 
+                    <th style={thStyle}>Ruta</th>
                     <th style={thStyle}>Peso</th>
                     <th style={thStyle}>Estado</th>
                     <th style={thStyle}>Acciones</th>
@@ -575,6 +594,7 @@ export default function Dashboard() {
                       <td style={tdStyle}>
                         {enc.remitente ? `${enc.remitente.nombres} ${enc.remitente.apellidos || ''}` : 'Sin datos'}
                       </td>
+                      <td style={tdStyle}>{enc.ruta || 'Sin ruta'}</td>
                       
                       <td style={tdStyle}>{enc.peso} Kg</td>
                       <td style={tdStyle}>
@@ -757,6 +777,7 @@ export default function Dashboard() {
           {reporte.remitente && <p><strong>Remitente:</strong> {reporte.remitente.nombres} {reporte.remitente.apellidos}</p>}
           {reporte.destinatario && <p><strong>Destinatario:</strong> {reporte.destinatario.nombres} {reporte.destinatario.apellidos}</p>}
           {reporte.ruta && <p><strong>Ruta:</strong> {reporte.ruta}</p>}
+          {reporte.direccionDestinatario && <p><strong>Dirección de entrega:</strong> {reporte.direccionDestinatario}</p>}
           {reporte.fechaViaje && <p><strong>Viaje:</strong> {reporte.fechaViaje}</p>}
           <div className="ticket-linea" />
           <p className="ticket-pie">Conserve este comprobante para consultar el estado de su encomienda.</p>

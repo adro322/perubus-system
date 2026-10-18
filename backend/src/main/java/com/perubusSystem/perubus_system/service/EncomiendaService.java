@@ -69,6 +69,15 @@ public class EncomiendaService {
 
     // Lógica CUS-01: Registrar Encomienda
     public Encomienda registrarEncomienda(Encomienda encomienda) {
+        if (encomienda.getRuta() == null || encomienda.getRuta().isBlank()) {
+            throw new IllegalArgumentException("La ruta es obligatoria.");
+        }
+        if (encomienda.getDireccionDestinatario() == null || encomienda.getDireccionDestinatario().isBlank()) {
+            throw new IllegalArgumentException("La dirección del destinatario es obligatoria.");
+        }
+        encomienda.setRuta(encomienda.getRuta().trim());
+        encomienda.setDireccionDestinatario(encomienda.getDireccionDestinatario().trim());
+
         // Validar Usuario
         if (encomienda.getUsuario() != null && encomienda.getUsuario().getIdUsuario() != null) {
             Usuario usuarioBD = usuarioRepository.findById(encomienda.getUsuario().getIdUsuario())
