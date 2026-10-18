@@ -1,5 +1,6 @@
 package com.perubusSystem.perubus_system.model;
 
+import com.perubusSystem.perubus_system.util.NombrePersona;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -41,8 +42,13 @@ public class Cliente {
     @PrePersist
     @PreUpdate
     private void definirTipoDocumento() {
-        if (numDocumento != null)
+        if (numDocumento != null) {
             tipoDocumento = numDocumento.length() == 11 ? "RUC" : "DNI";
+            if (numDocumento.length() == 8) {
+                nombres = NombrePersona.formatoTitulo(nombres);
+                apellidos = NombrePersona.formatoTitulo(apellidos);
+            }
+        }
     }
 
     public Cliente() {

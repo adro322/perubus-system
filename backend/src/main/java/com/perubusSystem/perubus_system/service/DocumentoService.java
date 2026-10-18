@@ -3,6 +3,7 @@ package com.perubusSystem.perubus_system.service;
 import com.perubusSystem.perubus_system.dto.DocumentoRespuesta;
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.repository.ClienteRepository;
+import com.perubusSystem.perubus_system.util.NombrePersona;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -24,8 +25,8 @@ public class DocumentoService {
 
     @Autowired
     public DocumentoService(ClienteRepository clienteRepository,
-                            @Value("${decolecta.url}") String baseUrl,
-                            @Value("${decolecta.token:}") String token) {
+            @Value("${decolecta.url}") String baseUrl,
+            @Value("${decolecta.token:}") String token) {
         this(clienteRepository, RestClient.builder().baseUrl(baseUrl).build(), token);
     }
 
@@ -45,8 +46,13 @@ public class DocumentoService {
         var local = clienteRepository.findByNumDocumento(doc);
         if (local.isPresent()) {
             Cliente c = local.get();
-            return new DocumentoRespuesta(tipo, doc, c.getNombres(),
-                    c.getApellidos() == null ? "" : c.getApellidos(), "LOCAL");
+            String nombres = c.getNombres();
+            String apellidos = c.getApellidos() == null ? "" : c.getApellidos();
+            if ("DNI".equals(tipo)) {
+                nombres = NombrePersona.formatoTitulo(nombres);
+                apellidos = NombrePersona.formatoTitulo(apellidos);
+            }
+            return new DocumentoRespuesta(tipo, doc, nombres, apellidos, "LOCAL");
         }
 
         if (token == null || token.isBlank())
@@ -59,7 +65,9 @@ public class DocumentoService {
     private DocumentoRespuesta consultarDni(String dni) {
         Map<String, Object> cuerpo = llamar("/v1/reniec/dni", dni);
         String apellidos = (texto(cuerpo, "first_last_name") + " " + texto(cuerpo, "second_last_name")).trim();
-        return new DocumentoRespuesta("DNI", dni, texto(cuerpo, "first_name"), apellidos, "API");
+        return new DocumentoRespuesta("DNI", dni,
+                NombrePersona.formatoTitulo(texto(cuerpo, "first_name")),
+                NombrePersona.formatoTitulo(apellidos), "API");
     }
 
     private DocumentoRespuesta consultarRuc(String ruc) {
