@@ -55,7 +55,8 @@ public class ManifiestoService {
         return aRespuesta(buscar(id));
     }
 
-    // CUS-07: asigna encomiendas "En origen", valida capacidad y las pasa a "En tránsito"
+    // CUS-07: asigna encomiendas "En origen" de la misma ruta del bus, valida capacidad
+    // y las pasa a "En tránsito"
     @Transactional
     public ManifiestoRespuesta asignarEncomiendas(Long id, List<String> trackings) {
         if (trackings == null || trackings.isEmpty())
@@ -72,6 +73,7 @@ public class ManifiestoService {
             if (!ESTADO_ASIGNABLE.equalsIgnoreCase(e.getEstadoLogistico()))
                 throw new IllegalStateException("La encomienda " + codigo + " no está en estado '"
                         + ESTADO_ASIGNABLE + "' (estado actual: " + e.getEstadoLogistico() + ").");
+            validarRuta(e, manifiesto);
             return e;
         }).toList();
 
@@ -89,6 +91,17 @@ public class ManifiestoService {
         manifiesto.setPesoTotalCarga(pesoActual + pesoNuevo);
         manifiestoRepository.save(manifiesto);
         return aRespuesta(manifiesto);
+    }
+
+    // La encomienda solo puede viajar en un bus de su misma ruta (ej. Lima-Ica)
+    private void validarRuta(Encomienda e, Manifiesto m) {
+        String rutaEncomienda = e.getRuta() == null ? "" : e.getRuta().trim();
+        if (rutaEncomienda.isEmpty())
+            throw new IllegalStateException("La encomienda " + e.getCodigoTracking() + " no tiene ruta registrada.");
+        String rutaManifiesto = m.getRuta() == null ? "" : m.getRuta().trim();
+        if (!rutaEncomienda.equalsIgnoreCase(rutaManifiesto))
+            throw new IllegalStateException("La encomienda " + e.getCodigoTracking() + " es de la ruta "
+                    + rutaEncomienda + " y el manifiesto es de la ruta " + rutaManifiesto + ".");
     }
 
     private Manifiesto buscar(Long id) {

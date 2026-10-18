@@ -144,6 +144,11 @@ export default function Dashboard() {
     }
   };
 
+  // Solo los buses (manifiestos) de la misma ruta de la encomienda
+  const manifiestosDeLaRuta = encomiendaAAsignar?.ruta
+    ? listaManifiestos.filter((m: any) => (m.ruta || '').trim().toLowerCase() === encomiendaAAsignar.ruta.trim().toLowerCase())
+    : [];
+
   const abrirAsignacion = (encomienda: any) => {
     setEncomiendaAAsignar(encomienda);
     setManifiestoElegido('');
@@ -681,17 +686,18 @@ export default function Dashboard() {
       <div onClick={() => !asignando && setEncomiendaAAsignar(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}>
         <section role="dialog" aria-modal="true" onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: '460px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}>
           <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>Asignar a manifiesto</h2>
-          <p style={{ margin: '6px 0 16px', color: '#777' }}>Encomienda {encomiendaAAsignar.codigoTracking} · {encomiendaAAsignar.peso} Kg</p>
+          <p style={{ margin: '6px 0 16px', color: '#777' }}>Encomienda {encomiendaAAsignar.codigoTracking} · {encomiendaAAsignar.peso} Kg · Ruta: <strong>{encomiendaAAsignar.ruta || 'sin ruta'}</strong></p>
           <label style={labelStyle}>Manifiesto</label>
           <select value={manifiestoElegido} onChange={e => setManifiestoElegido(e.target.value)} style={inputStyle}>
             <option value="">Seleccione un manifiesto</option>
-            {listaManifiestos.map((m: any) => (
+            {manifiestosDeLaRuta.map((m: any) => (
               <option key={m.idManifiesto} value={m.idManifiesto}>
                 N° {m.idManifiesto} · {m.numBus} · {m.ruta} · {m.fechaViaje} ({Number(m.pesoTotalCarga || 0).toFixed(0)}/{Number(m.capacidadKg || 0).toFixed(0)} Kg)
               </option>
             ))}
           </select>
-          {listaManifiestos.length === 0 && <p style={{ fontSize: '12px', color: '#777' }}>No hay manifiestos. Cree uno primero en "Manifiestos de Carga".</p>}
+          {!encomiendaAAsignar.ruta && <p style={{ fontSize: '12px', color: '#B26A00' }}>Esta encomienda no tiene ruta registrada, por lo que no se puede asignar a un bus.</p>}
+          {encomiendaAAsignar.ruta && manifiestosDeLaRuta.length === 0 && <p style={{ fontSize: '12px', color: '#B26A00' }}>No hay buses para {encomiendaAAsignar.ruta}. Cree uno en "Manifiestos de Carga".</p>}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
             <button type="button" disabled={asignando} onClick={() => setEncomiendaAAsignar(null)} style={{ padding: '10px 14px', backgroundColor: 'white', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', cursor: 'pointer' }}>Cancelar</button>
             <button type="button" disabled={asignando || !manifiestoElegido} onClick={asignarAManifiesto} style={{ padding: '10px 14px', backgroundColor: '#D32F2F', color: 'white', border: 0, borderRadius: '4px', fontWeight: 600, cursor: asignando || !manifiestoElegido ? 'not-allowed' : 'pointer' }}>{asignando ? 'Asignando...' : 'Asignar'}</button>
