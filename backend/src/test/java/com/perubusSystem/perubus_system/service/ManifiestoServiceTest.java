@@ -43,8 +43,13 @@ class ManifiestoServiceTest {
     }
 
     private Encomienda encomienda(String tracking, double peso, String estado) {
+        return encomienda(tracking, peso, estado, "Lima-Ica");
+    }
+
+    private Encomienda encomienda(String tracking, double peso, String estado, String ruta) {
         Encomienda e = new Encomienda();
         e.setCodigoTracking(tracking);
+        e.setRuta(ruta);
         e.setPeso(peso);
         e.setEstadoLogistico(estado);
         when(encomiendaRepository.findByCodigoTracking(tracking)).thenReturn(Optional.of(e));
@@ -85,6 +90,36 @@ class ManifiestoServiceTest {
         assertThatThrownBy(() -> service.asignarEncomiendas(1L, List.of("PERU-CCCCCCCC")))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Pendiente de Pago");
+    }
+
+    @Test
+    void rechazaEncomiendaDeOtraRuta() {
+        encomienda("PERU-DDDDDDDD", 10.0, "En origen", "Ica-Nazca");
+
+        assertThatThrownBy(() -> service.asignarEncomiendas(1L, List.of("PERU-DDDDDDDD")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Ica-Nazca")
+                .hasMessageContaining("Lima-Ica");
+        verify(encomiendaRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void rechazaEncomiendaSinRuta() {
+        encomienda("PERU-EEEEEEEE", 10.0, "En origen", null);
+
+        assertThatThrownBy(() -> service.asignarEncomiendas(1L, List.of("PERU-EEEEEEEE")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no tiene ruta");
+        verify(encomiendaRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void aceptaLaMismaRutaSinImportarMayusculasNiEspacios() {
+        Encomienda e = encomienda("PERU-FFFFFFFF", 10.0, "En origen", "  lima-ICA ");
+
+        service.asignarEncomiendas(1L, List.of("PERU-FFFFFFFF"));
+
+        assertThat(e.getEstadoLogistico()).isEqualTo("En tránsito");
     }
 
     @Test
