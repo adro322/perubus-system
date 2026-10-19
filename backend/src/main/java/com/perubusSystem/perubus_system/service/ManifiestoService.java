@@ -115,8 +115,15 @@ public class ManifiestoService {
 
     private ManifiestoRespuesta aRespuesta(Manifiesto m) {
         List<ManifiestoRespuesta.Item> items = encomiendaRepository.findByManifiesto(m).stream()
-                .map(e -> new ManifiestoRespuesta.Item(e.getCodigoTracking(), e.getDescripcion(), e.getPeso(),
-                        nombre(e.getRemitente()), nombre(e.getDestinatario()), e.getEstadoLogistico()))
+                .map(e -> new ManifiestoRespuesta.Item(
+                        e.getCodigoTracking(),
+                        e.getDescripcion(),
+                        e.getPeso(),
+                        nombre(e.getRemitente()),
+                        nombre(e.getDestinatario()),
+                        e.getEstadoLogistico(),
+                        e.getRuta(),
+                        e.getDireccionDestinatario()))
                 .toList();
         double total = items.stream().mapToDouble(ManifiestoRespuesta.Item::peso).sum();
         return new ManifiestoRespuesta(m.getIdManifiesto(), m.getNumBus(), m.getRuta(),

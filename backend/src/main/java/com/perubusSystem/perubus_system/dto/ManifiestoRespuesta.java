@@ -17,6 +17,8 @@ public record ManifiestoRespuesta(
             Double peso,
             String remitente,
             String destinatario,
-            String estadoLogistico) {
+            String estadoLogistico,
+            String ruta,
+            String direccionDestinatario) {
     }
 }

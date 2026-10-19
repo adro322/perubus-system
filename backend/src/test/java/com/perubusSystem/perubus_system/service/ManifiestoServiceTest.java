@@ -71,6 +71,7 @@ class ManifiestoServiceTest {
         assertThat(e.getManifiesto()).isSameAs(manifiesto);
         assertThat(manifiesto.getPesoTotalCarga()).isEqualTo(40.0);
         assertThat(respuesta.encomiendas()).hasSize(1);
+        assertThat(respuesta.encomiendas().get(0).ruta()).isEqualTo("Lima-Ica");
     }
 
     @Test

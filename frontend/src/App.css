@@ -73,13 +73,20 @@
 	.manifiesto-impresion table {
 		width: 100%;
 		border-collapse: collapse;
+		font-size: 11px;
 	}
 
 	.manifiesto-impresion th,
 	.manifiesto-impresion td {
 		border: 1px solid #111;
-		padding: 4px 6px;
+		padding: 5px 6px;
 		text-align: left;
+		word-break: break-word;
+	}
+
+	.manifiesto-impresion th {
+		background-color: #f5f5f5;
+		font-weight: 600;
 	}
 
 	.manifiesto-total {

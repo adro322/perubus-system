@@ -41,7 +41,10 @@ export default function Dashboard() {
   useEffect(() => {
     if (vistaActual === 'lista_clientes') cargarClientes();
     if (vistaActual === 'lista_encomiendas') cargarEncomiendas();
-    if (vistaActual === 'lista_manifiestos') cargarManifiestos();
+    if (vistaActual === 'lista_manifiestos') {
+      cargarManifiestos();
+      cargarEncomiendas();
+    }
   }, [vistaActual]);
 
   const cargarClientes = async () => {
@@ -176,7 +179,15 @@ export default function Dashboard() {
     }
   };
 
-  const imprimirManifiesto = (manifiesto: any) => {
+  const imprimirManifiesto = async (manifiesto: any) => {
+    if (!listaEncomiendas || listaEncomiendas.length === 0) {
+      try {
+        const res = await axios.get('http://localhost:8080/api/encomiendas');
+        setListaEncomiendas(res.data);
+      } catch (error) {
+        console.error("Error al cargar encomiendas para impresión:", error);
+      }
+    }
     setManifiestoImprimir(manifiesto);
     window.addEventListener('afterprint', () => setManifiestoImprimir(null), { once: true });
     setTimeout(() => window.print(), 100);
@@ -716,14 +727,35 @@ export default function Dashboard() {
         </div>
         <table>
           <thead>
-            <tr><th>N°</th><th>Tracking</th><th>Descripción</th><th>Remitente</th><th>Destinatario</th><th>Peso (Kg)</th></tr>
+            <tr>
+              <th>N°</th>
+              <th>Tracking</th>
+              <th>Descripción</th>
+              <th>Remitente</th>
+              <th>Destinatario</th>
+              <th>Ruta</th>
+              <th>Dirección de Destino</th>
+              <th>Peso (Kg)</th>
+            </tr>
           </thead>
           <tbody>
-            {manifiestoImprimir.encomiendas.map((e: any, i: number) => (
-              <tr key={e.codigoTracking}>
-                <td>{i + 1}</td><td>{e.codigoTracking}</td><td>{e.descripcion}</td><td>{e.remitente}</td><td>{e.destinatario}</td><td>{Number(e.peso).toFixed(2)}</td>
-              </tr>
-            ))}
+            {manifiestoImprimir.encomiendas.map((e: any, i: number) => {
+              const encFallback = listaEncomiendas.find((le: any) => le.codigoTracking === e.codigoTracking);
+              const rutaDestino = e.ruta || encFallback?.ruta || manifiestoImprimir.ruta || '-';
+              const direccionDestino = e.direccionDestinatario || encFallback?.direccionDestinatario || '-';
+              return (
+                <tr key={e.codigoTracking || i}>
+                  <td>{i + 1}</td>
+                  <td>{e.codigoTracking}</td>
+                  <td>{e.descripcion || '-'}</td>
+                  <td>{e.remitente || '-'}</td>
+                  <td>{e.destinatario || '-'}</td>
+                  <td>{rutaDestino}</td>
+                  <td>{direccionDestino}</td>
+                  <td>{Number(e.peso || 0).toFixed(2)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
         <p className="manifiesto-total"><strong>Total de bultos:</strong> {manifiestoImprimir.encomiendas.length} · <strong>Peso total:</strong> {Number(manifiestoImprimir.pesoTotalCarga || 0).toFixed(2)} Kg</p>
