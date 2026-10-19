@@ -363,13 +363,22 @@ body:has([role="dialog"]) {
 
 /* Mantener intacta la impresión de comprobantes */
 
-.ticket-impresion {
+.ticket-impresion,
+.manifiesto-impresion {
   display: none;
 }
 
 @media print {
   .app-shell {
     display: none !important;
+  }
+
+  .ticket-impresion {
+    display: block !important;
+  }
+
+  .manifiesto-impresion {
+    display: block !important;
   }
 }
 

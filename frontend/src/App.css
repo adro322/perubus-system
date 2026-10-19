@@ -13,8 +13,8 @@
 	}
 
 	.ticket-impresion {
-		display: block;
-		width: 72mm;
+		display: block !important;
+		width: 76mm;
 		margin: 0 auto;
 		font-family: Arial, sans-serif;
 		font-size: 12px;

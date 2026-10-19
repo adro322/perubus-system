@@ -37,6 +37,7 @@ export default function Dashboard() {
   const [manifiestoElegido, setManifiestoElegido] = useState('');
   const [asignando, setAsignando] = useState(false);
   const [manifiestoImprimir, setManifiestoImprimir] = useState<any>(null);
+  const [encomiendaImprimir, setEncomiendaImprimir] = useState<any>(null);
 
   useEffect(() => {
     if (vistaActual === 'lista_clientes') cargarClientes();
@@ -193,16 +194,21 @@ export default function Dashboard() {
     setTimeout(() => window.print(), 100);
   };
 
-  const imprimirEncomienda = () => {
-    if (encomiendaConsultada) {
+  const imprimirEncomienda = (enc?: any) => {
+    const seleccionada = enc || encomiendaConsultada || resumenRegistrado;
+    if (!seleccionada) return;
+    setEncomiendaImprimir(seleccionada);
+    window.addEventListener('afterprint', () => setEncomiendaImprimir(null), { once: true });
+    setTimeout(() => {
       window.print();
-    }
+    }, 100);
   };
 
   const limpiarConsulta = () => {
     setTrackingBuscado('');
     setEncomiendaConsultada(null);
     setErrorConsulta('');
+    setEncomiendaImprimir(null);
   };
 
   const iniciarNuevaEncomienda = () => {
@@ -359,7 +365,7 @@ export default function Dashboard() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                     <h3 style={{ color: '#1E1E2D' }}>Resumen de encomienda registrada</h3>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button type="button" onClick={() => window.print()} style={btnSecondary}>Imprimir / PDF</button>
+                      <button type="button" onClick={() => imprimirEncomienda(resumenRegistrado)} style={btnSecondary}>Imprimir / PDF</button>
                       <button type="button" onClick={iniciarNuevaEncomienda} style={btnLight}>Nueva encomienda</button>
                     </div>
                   </div>
@@ -574,7 +580,7 @@ export default function Dashboard() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                     <h3 style={{ color: '#1E1E2D' }}>Detalle de {encomiendaConsultada.codigoTracking}</h3>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button type="button" onClick={imprimirEncomienda} style={btnSecondary}>Imprimir / PDF</button>
+                      <button type="button" onClick={() => imprimirEncomienda(encomiendaConsultada)} style={btnSecondary}>Imprimir / PDF</button>
                       <button type="button" onClick={limpiarConsulta} style={btnLight}>Limpiar consulta</button>
                     </div>
                   </div>
@@ -800,23 +806,45 @@ export default function Dashboard() {
         </div>
       );
     })()}
-    {!manifiestoImprimir && (encomiendaConsultada || resumenRegistrado) && (() => {
-      const reporte = resumenRegistrado || encomiendaConsultada;
+    {!manifiestoImprimir && (encomiendaImprimir || encomiendaConsultada || resumenRegistrado) && (() => {
+      const reporte = encomiendaImprimir || (vistaActual === 'lista_encomiendas' ? encomiendaConsultada : (resumenRegistrado || encomiendaConsultada));
+      if (!reporte) return null;
+
+      const remitenteNombre = typeof reporte.remitente === 'object' && reporte.remitente !== null
+        ? `${reporte.remitente.nombres || ''} ${reporte.remitente.apellidos || ''}`.trim()
+        : (reporte.remitente || 'No especificado');
+
+      const remitenteDoc = typeof reporte.remitente === 'object' && reporte.remitente?.numDocumento
+        ? ` (${reporte.remitente.numDocumento})`
+        : '';
+
+      const destinatarioNombre = typeof reporte.destinatario === 'object' && reporte.destinatario !== null
+        ? `${reporte.destinatario.nombres || ''} ${reporte.destinatario.apellidos || ''}`.trim()
+        : (reporte.destinatario || 'No especificado');
+
+      const destinatarioDoc = typeof reporte.destinatario === 'object' && reporte.destinatario?.numDocumento
+        ? ` (${reporte.destinatario.numDocumento})`
+        : '';
+
       return (
         <div className="ticket-impresion">
           <h1>PeruBus Cargo</h1>
-          <p className="ticket-titulo">Comprobante de encomienda</p>
+          <p className="ticket-titulo">COMPROBANTE DE ENCOMIENDA</p>
           <div className="ticket-linea" />
           <p><strong>Tracking:</strong> {reporte.codigoTracking}</p>
           <p><strong>Estado:</strong> {reporte.estadoLogistico}</p>
-          <p><strong>Peso:</strong> {reporte.peso} Kg</p>
-          <p><strong>Tarifa:</strong> S/ {Number(reporte.tarifaBase).toFixed(2)}</p>
-          <p><strong>Descripción:</strong> {reporte.descripcion}</p>
-          {reporte.remitente && <p><strong>Remitente:</strong> {reporte.remitente.nombres} {reporte.remitente.apellidos}</p>}
-          {reporte.destinatario && <p><strong>Destinatario:</strong> {reporte.destinatario.nombres} {reporte.destinatario.apellidos}</p>}
+          <p><strong>Fecha de emisión:</strong> {new Date().toLocaleDateString('es-PE')}</p>
+          <div className="ticket-linea" />
+          <p><strong>Remitente:</strong> {remitenteNombre}{remitenteDoc}</p>
+          <p><strong>Destinatario:</strong> {destinatarioNombre}{destinatarioDoc}</p>
           {reporte.ruta && <p><strong>Ruta:</strong> {reporte.ruta}</p>}
           {reporte.direccionDestinatario && <p><strong>Dirección de entrega:</strong> {reporte.direccionDestinatario}</p>}
-          {reporte.fechaViaje && <p><strong>Viaje:</strong> {reporte.fechaViaje}</p>}
+          {reporte.numeroBus && <p><strong>Bus asignado:</strong> {reporte.numeroBus}</p>}
+          {reporte.fechaViaje && <p><strong>Fecha de viaje:</strong> {reporte.fechaViaje}</p>}
+          <div className="ticket-linea" />
+          <p><strong>Descripción:</strong> {reporte.descripcion || 'Sin descripción'}</p>
+          <p><strong>Peso:</strong> {reporte.peso} Kg</p>
+          <p style={{ fontSize: '13px', marginTop: '6px' }}><strong>Tarifa:</strong> S/ {Number(reporte.tarifaBase || 0).toFixed(2)}</p>
           <div className="ticket-linea" />
           <p className="ticket-pie">Conserve este comprobante para consultar el estado de su encomienda.</p>
         </div>
