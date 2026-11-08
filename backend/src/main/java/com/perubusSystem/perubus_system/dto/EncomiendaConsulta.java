@@ -9,6 +9,7 @@ public record EncomiendaConsulta(
         ClienteResumen remitente,
         ClienteResumen destinatario,
         String ruta,
+        String direccionDestinatario,
         String fechaViaje,
         String numeroBus) {
 }

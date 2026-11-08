@@ -1,0 +1,366 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+.register-page,
+.register-page * {
+  box-sizing: border-box;
+  font-family: 'Inter', 'Segoe UI', Arial, sans-serif;
+}
+
+.register-page {
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
+  background: #f3f6fb;
+  color: #182d49;
+}
+
+/* Panel visual izquierdo */
+
+.register-visual {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 50px;
+  background:
+    linear-gradient(
+      135deg,
+      rgba(7, 27, 52, 0.93),
+      rgba(16, 43, 80, 0.76)
+    ),
+    url('https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?auto=format&fit=crop&w=1800&q=90')
+      center / cover no-repeat;
+}
+
+.register-visual::before {
+  position: absolute;
+  right: -100px;
+  bottom: -160px;
+  width: 390px;
+  height: 390px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 50%;
+  content: '';
+}
+
+.register-visual::after {
+  position: absolute;
+  right: -35px;
+  bottom: -95px;
+  width: 260px;
+  height: 260px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  content: '';
+}
+
+.register-visual-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 540px;
+  color: #fff;
+}
+
+.register-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 25px;
+  padding: 9px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.09);
+  color: #f5dce0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.register-eyebrow::before {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ef465e;
+  content: '';
+}
+
+.register-visual h1 {
+  margin: 0 0 20px;
+  color: white;
+  font-size: clamp(38px, 4vw, 58px);
+  font-weight: 900;
+  line-height: 1.12;
+  letter-spacing: -2px;
+}
+
+.register-visual h1 span {
+  color: #ff5268;
+}
+
+.register-visual-content > p {
+  max-width: 440px;
+  margin: 0;
+  color: #d6e2f1;
+  font-size: 15px;
+  line-height: 1.9;
+}
+
+.register-benefits {
+  display: grid;
+  gap: 17px;
+  margin-top: 42px;
+}
+
+.register-benefit {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  color: #eef4fc;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.register-benefit-icon {
+  display: grid;
+  width: 35px;
+  height: 35px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.09);
+  color: #ff8090;
+  font-size: 16px;
+}
+
+/* Panel del formulario */
+
+.register-form-panel {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  padding: 45px;
+  background: #fff;
+}
+
+.register-form-container {
+  width: 100%;
+  max-width: 430px;
+}
+
+.register-logo {
+  margin-bottom: 35px;
+}
+
+.register-logo img {
+  display: block;
+  width: 225px;
+  max-width: 100%;
+  max-height: 90px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+.register-heading-label {
+  margin-bottom: 12px;
+  color: #d71935;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.7px;
+  text-transform: uppercase;
+}
+
+.register-form-container h2 {
+  margin: 0 0 11px;
+  color: #102b50;
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -1px;
+}
+
+.register-description {
+  margin: 0 0 32px;
+  color: #77869a;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.register-form {
+  display: flex;
+  flex-direction: column;
+  gap: 21px;
+}
+
+.register-field label {
+  display: block;
+  margin-bottom: 9px;
+  color: #30435e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.register-field input,
+.register-field select {
+  display: block;
+  width: 100%;
+  min-height: 49px;
+  padding: 13px 15px;
+  border: 1px solid #dce5ef;
+  border-radius: 9px;
+  outline: none;
+  background: #f8fafd;
+  color: #1b2e49;
+  font-size: 13px;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.register-field input::placeholder {
+  color: #9aa7b8;
+}
+
+.register-field input:focus,
+.register-field select:focus {
+  border-color: #497ab6;
+  background: white;
+  box-shadow: 0 0 0 4px rgba(73, 122, 182, 0.11);
+}
+
+.register-submit {
+  display: flex;
+  width: 100%;
+  min-height: 51px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 5px;
+  border: none;
+  border-radius: 9px;
+  background: #d71935;
+  box-shadow: 0 7px 17px rgba(215, 25, 53, 0.19);
+  color: white;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+
+.register-submit:hover {
+  transform: translateY(-1px);
+  background: #b9102a;
+  box-shadow: 0 10px 22px rgba(215, 25, 53, 0.25);
+}
+
+.register-submit:active {
+  transform: translateY(0);
+}
+
+.register-back {
+  display: block;
+  margin-top: 28px;
+  color: #5e718b;
+  font-size: 12px;
+  text-align: center;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.register-back:hover {
+  color: #d71935;
+}
+
+.register-security-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 27px;
+  padding: 13px;
+  border: 1px solid #e2eaf4;
+  border-radius: 9px;
+  background: #f6f9fd;
+  color: #75849a;
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.register-security-note strong {
+  color: #30435e;
+}
+
+@media (max-width: 850px) {
+  .register-visual {
+    padding: 30px;
+  }
+
+  .register-form-panel {
+    padding: 30px;
+  }
+
+  .register-visual h1 {
+    font-size: 38px;
+  }
+
+  .register-logo img {
+    width: 190px;
+  }
+}
+
+@media (max-width: 650px) {
+  .register-page {
+    flex-direction: column;
+  }
+
+  .register-visual {
+    min-height: 245px;
+    flex: none;
+    padding: 32px 25px;
+  }
+
+  .register-visual h1 {
+    font-size: 34px;
+    letter-spacing: -1px;
+  }
+
+  .register-visual-content > p {
+    font-size: 12px;
+  }
+
+  .register-eyebrow {
+    margin-bottom: 14px;
+  }
+
+  .register-benefits {
+    display: none;
+  }
+
+  .register-form-panel {
+    min-height: auto;
+    padding: 35px 24px;
+  }
+
+  .register-form-container h2 {
+    font-size: 28px;
+  }
+
+  .register-logo {
+    margin-bottom: 25px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .register-page *,
+  .register-page *::before,
+  .register-page *::after {
+    transition: none !important;
+  }
+}

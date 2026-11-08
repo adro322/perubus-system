@@ -1,17 +1,27 @@
 package com.perubusSystem.perubus_system.model;
 
+import com.perubusSystem.perubus_system.util.NombrePersona;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
 @Entity
 @Table(name = "cliente")
+@Getter
+@Setter
 public class Cliente {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long idCliente;
 
-    @Column(length = 8)
+    // 8 dígitos = DNI, 11 dígitos = RUC
+    @Column(length = 11)
     private String numDocumento;
+
+    @Column(length = 3)
+    private String tipoDocumento;
 
     @Column(columnDefinition = "TEXT")
     private String nombres;
@@ -26,62 +36,21 @@ public class Cliente {
     private String correo;
 
     @Column(length = 255)
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String password;
+
+    @PrePersist
+    @PreUpdate
+    private void definirTipoDocumento() {
+        if (numDocumento != null) {
+            tipoDocumento = numDocumento.length() == 11 ? "RUC" : "DNI";
+            if (numDocumento.length() == 8) {
+                nombres = NombrePersona.formatoTitulo(nombres);
+                apellidos = NombrePersona.formatoTitulo(apellidos);
+            }
+        }
+    }
 
     public Cliente() {
     }
-
-    // Getters y Setters
-    public Long getIdCliente() {
-        return idCliente;
-    }
-
-    public void setIdCliente(Long idCliente) {
-        this.idCliente = idCliente;
-    }
-
-    public String getNumDocumento() {
-        return numDocumento;
-    }
-
-    public void setNumDocumento(String numDocumento) {
-        this.numDocumento = numDocumento;
-    }
-
-    public String getNombres() {
-        return nombres;
-    }
-
-    public void setNombres(String nombres) {
-        this.nombres = nombres;
-    }
-
-    public String getApellidos() {
-        return apellidos;
-    }
-
-    public void setApellidos(String apellidos) {
-        this.apellidos = apellidos;
-    }
-
-    public String getTelefono() {
-        return telefono;
-    }
-
-    public void setTelefono(String telefono) {
-        this.telefono = telefono;
-    }
-
-    public String getCorreo() {
-        return correo;
-    }
-
-    public void setCorreo(String correo) {
-        this.correo = correo;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
 }
