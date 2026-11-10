@@ -4,8 +4,10 @@ import com.perubusSystem.perubus_system.dto.ManifiestoRespuesta;
 import com.perubusSystem.perubus_system.dto.ManifiestoSolicitud;
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.model.Encomienda;
+import com.perubusSystem.perubus_system.model.EventoTracking;
 import com.perubusSystem.perubus_system.model.Manifiesto;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
+import com.perubusSystem.perubus_system.repository.EventoTrackingRepository;
 import com.perubusSystem.perubus_system.repository.ManifiestoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,8 @@ public class ManifiestoService {
     private ManifiestoRepository manifiestoRepository;
     @Autowired
     private EncomiendaRepository encomiendaRepository;
+    @Autowired
+    private EventoTrackingRepository eventoTrackingRepository;
 
     public Manifiesto crear(ManifiestoSolicitud datos) {
         if (datos.numBus() == null || datos.numBus().isBlank())
@@ -86,6 +90,12 @@ public class ManifiestoService {
         for (Encomienda e : nuevas) {
             e.setManifiesto(manifiesto);
             e.setEstadoLogistico(ESTADO_EN_TRANSITO);
+            EventoTracking evento = new EventoTracking();
+            evento.setEncomienda(e);
+            evento.setEstado(ESTADO_EN_TRANSITO);
+            evento.setDetalle("Encomienda asignada al bus " + manifiesto.getNumBus() + " para la ruta "
+                    + manifiesto.getRuta() + ".");
+            eventoTrackingRepository.save(evento);
         }
         encomiendaRepository.saveAll(nuevas);
         manifiesto.setPesoTotalCarga(pesoActual + pesoNuevo);

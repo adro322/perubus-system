@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "encomienda")
 @Getter
@@ -36,6 +38,9 @@ public class Encomienda {
     @Column(name = "direccion_destinatario", columnDefinition = "TEXT")
     private String direccionDestinatario;
 
+    @Column(name = "fecha_registro")
+    private LocalDateTime fechaRegistro;
+
     // --- NUEVAS RELACIONES DE CLIENTE ---
     @ManyToOne
     @JoinColumn(name = "idRemitente", nullable = false)
@@ -53,6 +58,13 @@ public class Encomienda {
     @ManyToOne
     @JoinColumn(name = "idManifiesto")
     private Manifiesto manifiesto;
+
+    @PrePersist
+    private void asignarFechaRegistro() {
+        if (fechaRegistro == null) {
+            fechaRegistro = LocalDateTime.now();
+        }
+    }
 
     public Encomienda() {
     }

@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [listaEncomiendas, setListaEncomiendas] = useState<any[]>([]);
   const [pagoSeleccionado, setPagoSeleccionado] = useState<any>(null);
   const [pagoProcesando, setPagoProcesando] = useState(false);
+  const [llegadaConfirmando, setLlegadaConfirmando] = useState('');
   const [trackingBuscado, setTrackingBuscado] = useState('');
   const [encomiendaConsultada, setEncomiendaConsultada] = useState<any>(null);
   const [resumenRegistrado, setResumenRegistrado] = useState<any>(null);
@@ -78,6 +79,55 @@ export default function Dashboard() {
       alert(error.response?.data?.mensaje || "No se pudo registrar el pago simulado.");
     } finally {
       setPagoProcesando(false);
+    }
+  };
+
+  const confirmarLlegada = async (codigoTracking: string) => {
+    if (llegadaConfirmando) return;
+    setLlegadaConfirmando(codigoTracking);
+    try {
+      await axios.post(
+        `http://localhost:8080/api/encomiendas/${encodeURIComponent(codigoTracking)}/confirmar-llegada`,
+        {},
+        { withCredentials: true }
+      );
+      setListaEncomiendas(actual => actual.map(encomienda =>
+        encomienda.codigoTracking === codigoTracking
+          ? { ...encomienda, estadoLogistico: 'Llegó a agencia de destino' }
+          : encomienda
+      ));
+      mostrarMensaje(`Llegada a la agencia de destino confirmada para ${codigoTracking}`);
+    } catch (error: unknown) {
+      alert(axios.isAxiosError<{ mensaje?: string }>(error)
+        ? error.response?.data?.mensaje || 'No se pudo confirmar la llegada.'
+        : 'No se pudo confirmar la llegada.');
+    } finally {
+      setLlegadaConfirmando('');
+    }
+  };
+
+  const confirmarEntrega = async (codigoTracking: string) => {
+    const recibidoPor = window.prompt('Nombre de la persona que recibe la encomienda:')?.trim();
+    if (!recibidoPor) return;
+    setLlegadaConfirmando(codigoTracking);
+    try {
+      await axios.post(
+        `http://localhost:8080/api/encomiendas/${encodeURIComponent(codigoTracking)}/confirmar-entrega`,
+        { recibidoPor },
+        { withCredentials: true }
+      );
+      setListaEncomiendas(actual => actual.map(encomienda =>
+        encomienda.codigoTracking === codigoTracking
+          ? { ...encomienda, estadoLogistico: 'Entregado' }
+          : encomienda
+      ));
+      mostrarMensaje(`Entrega confirmada para ${codigoTracking}`);
+    } catch (error: unknown) {
+      alert(axios.isAxiosError<{ mensaje?: string }>(error)
+        ? error.response?.data?.mensaje || 'No se pudo confirmar la entrega.'
+        : 'No se pudo confirmar la entrega.');
+    } finally {
+      setLlegadaConfirmando('');
     }
   };
 
@@ -629,6 +679,26 @@ export default function Dashboard() {
                           {enc.estadoLogistico?.toLowerCase() === 'pendiente de pago' && (
                             <button type="button" onClick={() => setPagoSeleccionado(enc)} style={{ padding: '6px 12px', backgroundColor: '#D32F2F', color: 'white', border: '1px solid #D32F2F', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>
                               Pagar
+                            </button>
+                          )}
+                          {enc.estadoLogistico?.toLowerCase() === 'en tránsito' && (
+                            <button
+                              type="button"
+                              disabled={llegadaConfirmando === enc.codigoTracking}
+                              onClick={() => void confirmarLlegada(enc.codigoTracking)}
+                              style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                            >
+                              {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Llegó a agencia destino'}
+                            </button>
+                          )}
+                          {enc.estadoLogistico?.toLowerCase() === 'llegó a agencia de destino' && (
+                            <button
+                              type="button"
+                              disabled={llegadaConfirmando === enc.codigoTracking}
+                              onClick={() => void confirmarEntrega(enc.codigoTracking)}
+                              style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                            >
+                              {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Entregar / recoger'}
                             </button>
                           )}
                           <button

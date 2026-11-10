@@ -8,4 +8,6 @@ public interface ClienteRepository extends JpaRepository<Cliente, Long> {
     // Esto nos servirá para autocompletar datos si el cliente ya existe (CUS-01
     // Flujo Alternativo 2a)
     Optional<Cliente> findByNumDocumento(String numDocumento);
+
+    boolean existsByCorreoIgnoreCase(String correo);
 }

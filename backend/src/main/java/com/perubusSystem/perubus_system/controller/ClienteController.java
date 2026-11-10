@@ -17,6 +17,9 @@ public class ClienteController {
 
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarCliente(@RequestBody Cliente cliente) {
+        cliente.setPassword(clienteRepository.findByNumDocumento(cliente.getNumDocumento())
+                .map(Cliente::getPassword)
+                .orElse(null));
         Cliente clienteGuardado = clienteRepository.save(cliente);
         return ResponseEntity.ok(ClienteRespuesta.desde(clienteGuardado));
     }

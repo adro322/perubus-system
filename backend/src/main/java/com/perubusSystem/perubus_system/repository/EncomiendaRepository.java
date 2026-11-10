@@ -12,4 +12,7 @@ public interface EncomiendaRepository extends JpaRepository<Encomienda, Long> {
 	Optional<Encomienda> findByCodigoTracking(String codigoTracking);
 
 	List<Encomienda> findByManifiesto(Manifiesto manifiesto);
+
+	List<Encomienda> findByRemitente_IdClienteOrDestinatario_IdClienteOrderByIdEncomiendaDesc(
+			Long remitenteId, Long destinatarioId);
 }
