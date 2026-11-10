@@ -20,7 +20,8 @@ export default function Login() {
     try {
       const res = await axios.post(
         'http://localhost:8080/api/usuarios/login',
-        { username, password }
+        { username, password },
+        { withCredentials: true }
       );
 
       sessionStorage.setItem(
@@ -175,6 +176,9 @@ export default function Login() {
           </form>
 
           <div className="login-register">
+            <Link to="/portal" className="register-link">
+              <span>↗</span> Portal de clientes y tracking
+            </Link>
             <div className="register-divider">
               <span />
               <small>¿Nuevo personal?</small>

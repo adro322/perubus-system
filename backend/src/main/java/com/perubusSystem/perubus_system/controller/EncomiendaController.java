@@ -5,6 +5,7 @@ import com.perubusSystem.perubus_system.model.Encomienda;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
 import com.perubusSystem.perubus_system.service.EncomiendaService;
 import com.perubusSystem.perubus_system.dto.ClienteResumen;
+import com.perubusSystem.perubus_system.dto.ConfirmacionEntregaSolicitud;
 import com.perubusSystem.perubus_system.dto.EncomiendaConsulta;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -14,10 +15,11 @@ import org.springframework.web.bind.annotation.*;
 import java.util.NoSuchElementException;
 import java.util.Locale;
 import java.util.Map;
+import jakarta.servlet.http.HttpSession;
 
 @RestController
 @RequestMapping("/api/encomiendas")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "${app.frontend-origin}", allowCredentials = "true")
 public class EncomiendaController {
 
     @Autowired
@@ -99,6 +101,54 @@ public class EncomiendaController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{codigoTracking}/confirmar-llegada")
+    public ResponseEntity<?> confirmarLlegada(
+            @PathVariable String codigoTracking,
+            HttpSession session) {
+        Object usuarioId = session.getAttribute("idUsuario");
+        if (!(usuarioId instanceof Long id)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensaje", "Inicia sesión como personal para confirmar la llegada."));
+        }
+        try {
+            Encomienda encomienda = encomiendaService.confirmarLlegada(
+                    codigoTracking.trim().toUpperCase(Locale.ROOT), id);
+            return ResponseEntity.ok(Map.of(
+                    "codigoTracking", encomienda.getCodigoTracking(),
+                    "estadoLogistico", encomienda.getEstadoLogistico()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{codigoTracking}/confirmar-entrega")
+    public ResponseEntity<?> confirmarEntrega(
+            @PathVariable String codigoTracking,
+            @RequestBody ConfirmacionEntregaSolicitud solicitud,
+            HttpSession session) {
+        Object usuarioId = session.getAttribute("idUsuario");
+        if (!(usuarioId instanceof Long id)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensaje", "Inicia sesión como personal para confirmar la entrega."));
+        }
+        try {
+            Encomienda encomienda = encomiendaService.confirmarEntrega(
+                    codigoTracking.trim().toUpperCase(Locale.ROOT), id,
+                    solicitud == null ? null : solicitud.recibidoPor());
+            return ResponseEntity.ok(Map.of(
+                    "codigoTracking", encomienda.getCodigoTracking(),
+                    "estadoLogistico", encomienda.getEstadoLogistico()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("mensaje", e.getMessage()));
         }
     }
 

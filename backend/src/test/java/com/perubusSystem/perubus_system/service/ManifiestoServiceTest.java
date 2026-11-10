@@ -3,6 +3,7 @@ package com.perubusSystem.perubus_system.service;
 import com.perubusSystem.perubus_system.model.Encomienda;
 import com.perubusSystem.perubus_system.model.Manifiesto;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
+import com.perubusSystem.perubus_system.repository.EventoTrackingRepository;
 import com.perubusSystem.perubus_system.repository.ManifiestoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ class ManifiestoServiceTest {
 
     private final ManifiestoRepository manifiestoRepository = mock(ManifiestoRepository.class);
     private final EncomiendaRepository encomiendaRepository = mock(EncomiendaRepository.class);
+    private final EventoTrackingRepository eventoTrackingRepository = mock(EventoTrackingRepository.class);
     private final ManifiestoService service = new ManifiestoService();
     private final List<Encomienda> asignadas = new ArrayList<>();
     private Manifiesto manifiesto;
@@ -32,6 +34,7 @@ class ManifiestoServiceTest {
     void preparar() {
         ReflectionTestUtils.setField(service, "manifiestoRepository", manifiestoRepository);
         ReflectionTestUtils.setField(service, "encomiendaRepository", encomiendaRepository);
+        ReflectionTestUtils.setField(service, "eventoTrackingRepository", eventoTrackingRepository);
 
         manifiesto = new Manifiesto();
         manifiesto.setIdManifiesto(1L);

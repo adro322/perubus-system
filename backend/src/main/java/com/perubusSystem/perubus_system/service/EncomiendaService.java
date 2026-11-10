@@ -3,10 +3,12 @@ package com.perubusSystem.perubus_system.service;
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.model.Comprobante;
 import com.perubusSystem.perubus_system.model.Encomienda;
+import com.perubusSystem.perubus_system.model.EventoTracking;
 import com.perubusSystem.perubus_system.model.Usuario;
 import com.perubusSystem.perubus_system.repository.ClienteRepository;
 import com.perubusSystem.perubus_system.repository.ComprobanteRepository;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
+import com.perubusSystem.perubus_system.repository.EventoTrackingRepository;
 import com.perubusSystem.perubus_system.repository.UsuarioRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,8 @@ public class EncomiendaService {
     private UsuarioRepository usuarioRepository;
     @Autowired
     private ComprobanteRepository comprobanteRepository;
+    @Autowired
+    private EventoTrackingRepository eventoTrackingRepository;
 
     // Lógica CUS-02: Cotizar Envío Dinámico
     public double calcularCotizacion(String origen, String destino, Double peso) {
@@ -68,6 +72,7 @@ public class EncomiendaService {
     }
 
     // Lógica CUS-01: Registrar Encomienda
+    @Transactional
     public Encomienda registrarEncomienda(Encomienda encomienda) {
         if (encomienda.getRuta() == null || encomienda.getRuta().isBlank()) {
             throw new IllegalArgumentException("La ruta es obligatoria.");
@@ -89,6 +94,7 @@ public class EncomiendaService {
 
         // Validar/Guardar Remitente
         if (encomienda.getRemitente() != null) {
+            encomienda.getRemitente().setPassword(null);
             Cliente remitente = clienteRepository.findByNumDocumento(encomienda.getRemitente().getNumDocumento())
                     .orElseGet(() -> clienteRepository.save(encomienda.getRemitente()));
             encomienda.setRemitente(remitente);
@@ -96,6 +102,7 @@ public class EncomiendaService {
 
         // Validar/Guardar Destinatario
         if (encomienda.getDestinatario() != null) {
+            encomienda.getDestinatario().setPassword(null);
             Cliente destinatario = clienteRepository.findByNumDocumento(encomienda.getDestinatario().getNumDocumento())
                     .orElseGet(() -> clienteRepository.save(encomienda.getDestinatario()));
             encomienda.setDestinatario(destinatario);
@@ -108,7 +115,9 @@ public class EncomiendaService {
         // ¡CAMBIO CLAVE PARA LA V3! Nace como "Pendiente de Pago"
         encomienda.setEstadoLogistico("Pendiente de Pago");
 
-        return encomiendaRepository.save(encomienda);
+        Encomienda guardada = encomiendaRepository.save(encomienda);
+        registrarEvento(guardada, "Encomienda registrada y pendiente de pago", null);
+        return guardada;
     }
 
     @Transactional
@@ -138,7 +147,64 @@ public class EncomiendaService {
         comprobanteRepository.save(comprobante);
         encomienda.setEstadoLogistico("En origen");
         encomiendaRepository.save(encomienda);
+        registrarEvento(encomienda, "Pago confirmado. El envío se encuentra en origen.", null);
 
         return comprobante;
+    }
+
+    @Transactional
+    public Encomienda confirmarLlegada(String codigoTracking, Long usuarioId) {
+        Usuario usuario = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new NoSuchElementException("No se encontró el usuario."));
+        if (!Boolean.TRUE.equals(usuario.getEstado())
+                || !("ADMIN".equalsIgnoreCase(usuario.getRol()) || "AGENTE".equalsIgnoreCase(usuario.getRol()))) {
+            throw new IllegalStateException("No tienes permiso para confirmar la llegada.");
+        }
+
+        Encomienda encomienda = encomiendaRepository.findByCodigoTracking(codigoTracking)
+                .orElseThrow(() -> new NoSuchElementException("No se encontró la encomienda."));
+        if (!"En tránsito".equalsIgnoreCase(encomienda.getEstadoLogistico())) {
+            throw new IllegalStateException("Solo se puede confirmar la llegada de encomiendas en tránsito.");
+        }
+
+        encomienda.setEstadoLogistico("Llegó a agencia de destino");
+        encomiendaRepository.save(encomienda);
+        registrarEvento(encomienda, "Encomienda recibida en la agencia de destino.", null);
+        return encomienda;
+    }
+
+    @Transactional
+    public Encomienda confirmarEntrega(String codigoTracking, Long usuarioId, String recibidoPor) {
+        Usuario usuario = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new NoSuchElementException("No se encontró el usuario."));
+        if (!Boolean.TRUE.equals(usuario.getEstado())
+                || !("ADMIN".equalsIgnoreCase(usuario.getRol()) || "AGENTE".equalsIgnoreCase(usuario.getRol()))) {
+            throw new IllegalStateException("No tienes permiso para confirmar la entrega.");
+        }
+        if (recibidoPor == null || recibidoPor.isBlank() || recibidoPor.trim().length() > 120) {
+            throw new IllegalArgumentException("Indica el nombre de la persona que recibe la encomienda (máximo 120 caracteres).");
+        }
+
+        Encomienda encomienda = encomiendaRepository.findByCodigoTracking(codigoTracking)
+                .orElseThrow(() -> new NoSuchElementException("No se encontró la encomienda."));
+        if (!"Llegó a agencia de destino".equalsIgnoreCase(encomienda.getEstadoLogistico())) {
+            throw new IllegalStateException("La encomienda debe estar en la agencia de destino antes de entregarse.");
+        }
+
+        encomienda.setEstadoLogistico("Entregado");
+        encomiendaRepository.save(encomienda);
+        registrarEvento(encomienda,
+                "Entrega confirmada por personal de PeruBus. Recibió: " + recibidoPor.trim() + ".",
+                null);
+        return encomienda;
+    }
+
+    private void registrarEvento(Encomienda encomienda, String detalle, String ubicacion) {
+        EventoTracking evento = new EventoTracking();
+        evento.setEncomienda(encomienda);
+        evento.setEstado(encomienda.getEstadoLogistico());
+        evento.setDetalle(detalle);
+        evento.setUbicacion(ubicacion);
+        eventoTrackingRepository.save(evento);
     }
 }
