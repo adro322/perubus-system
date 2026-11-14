@@ -3,8 +3,8 @@ package com.perubusSystem.perubus_system.controller;
 import com.perubusSystem.perubus_system.dto.*;
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.model.Encomienda;
-import com.perubusSystem.perubus_system.model.EventoTracking;
 import com.perubusSystem.perubus_system.repository.ClienteRepository;
+import com.perubusSystem.perubus_system.repository.BultoEncomiendaRepository;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
 import com.perubusSystem.perubus_system.repository.EventoTrackingRepository;
 import com.perubusSystem.perubus_system.service.EstimacionEntregaService;
@@ -31,16 +31,19 @@ public class PortalClienteController {
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     private final ClienteRepository clienteRepository;
+    private final BultoEncomiendaRepository bultoRepository;
     private final EncomiendaRepository encomiendaRepository;
     private final EventoTrackingRepository eventoTrackingRepository;
     private final EstimacionEntregaService estimacionEntregaService;
 
     public PortalClienteController(
             ClienteRepository clienteRepository,
+            BultoEncomiendaRepository bultoRepository,
             EncomiendaRepository encomiendaRepository,
             EventoTrackingRepository eventoTrackingRepository,
             EstimacionEntregaService estimacionEntregaService) {
         this.clienteRepository = clienteRepository;
+        this.bultoRepository = bultoRepository;
         this.encomiendaRepository = encomiendaRepository;
         this.eventoTrackingRepository = eventoTrackingRepository;
         this.estimacionEntregaService = estimacionEntregaService;
@@ -188,11 +191,22 @@ public class PortalClienteController {
                     null,
                     null));
         }
+        Double pesoOriginal = encomienda.getPesoOriginal() == null
+                ? encomienda.getPeso()
+                : encomienda.getPesoOriginal();
+        List<BultoEncomiendaRespuesta> bultos = new java.util.ArrayList<>();
+        bultos.add(new BultoEncomiendaRespuesta(encomienda.getDescripcion(), pesoOriginal, true));
+        bultos.addAll(bultoRepository
+                .findByEncomienda_IdEncomiendaOrderByFechaRegistroAsc(encomienda.getIdEncomienda())
+                .stream()
+                .map(bulto -> new BultoEncomiendaRespuesta(bulto.getDescripcion(), bulto.getPeso(), false))
+                .toList());
         return PortalEncomiendaRespuesta.desde(
                 encomienda,
                 clienteId,
                 estimacionEntregaService.calcularFechaEstimada(encomienda).orElse(null),
-                historial);
+                historial,
+                bultos);
     }
 
     private Cliente clienteAutenticado(HttpSession session) {

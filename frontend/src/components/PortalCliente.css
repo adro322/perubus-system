@@ -369,10 +369,122 @@
   font-weight: 600;
 }
 
+.shipment-requests {
+  margin: 0 24px 24px;
+  padding: 16px;
+  border: 1px solid #e1e7ef;
+  border-radius: 9px;
+  background: #fbfcfe;
+}
+
+.shipment-requests h3 {
+  margin-bottom: 12px;
+  color: #102b50;
+  font-size: 14px;
+}
+
+.shipment-requests ul {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding-left: 18px;
+  color: #354963;
+  font-size: 12px;
+}
+
+.shipment-requests li p {
+  margin-top: 4px;
+  color: #647895;
+}
+
+.shipment-request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.shipment-request-actions label {
+  display: grid;
+  flex: 1 1 250px;
+  gap: 6px;
+  color: #52657e;
+  font-size: 12px;
+}
+
+.shipment-request-actions input {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #c9d5e5;
+  border-radius: 6px;
+  color: #263c58;
+}
+
+.shipment-request-actions button {
+  padding: 9px 12px;
+  border: 1px solid #c9d5e5;
+  border-radius: 6px;
+  background: #fff;
+  color: #173b67;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shipment-request-actions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.shipment-request-actions .request-cancel {
+  border-color: #efc4c9;
+  color: #a4162b;
+}
+
+.request-pending-note {
+  color: #875712;
+  font-size: 12px;
+}
+
 .shipment-details p span {
   color: #8290a2;
   font-size: 11px;
   font-weight: 500;
+}
+
+.shipment-parcels {
+  margin: 0 24px 20px;
+  padding: 14px 16px;
+  border: 1px solid #e1e7ef;
+  border-radius: 9px;
+  background: #fbfcfe;
+}
+
+.shipment-parcels h3 {
+  margin-bottom: 10px;
+  color: #102b50;
+  font-size: 14px;
+}
+
+.shipment-parcels ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shipment-parcels li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #52657e;
+  font-size: 12px;
+}
+
+.shipment-parcels li strong {
+  color: #263c58;
+  text-align: right;
 }
 
 .shipment-progress {
@@ -513,6 +625,23 @@
 .shipment-eta p {
   margin-top: 4px;
   color: #647895;
+}
+
+.shipment-requests li button {
+  margin-top: 8px;
+  padding: 8px 11px;
+  border: 1px solid #c9d5e5;
+  border-radius: 6px;
+  background: #fff;
+  color: #173b67;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shipment-requests li button:disabled {
+  cursor: wait;
+  opacity: 0.6;
   font-size: 11px;
   line-height: 1.5;
 }
@@ -610,6 +739,16 @@
 }
 
 @media (max-width: 480px) {
+  .progress-track {
+    height: 72px;
+  }
+
+  .progress-stop small {
+    max-width: 48px;
+    font-size: 8px;
+    line-height: 1.2;
+  }
+
   .portal-user {
     align-items: flex-end;
     flex-direction: column;
@@ -623,5 +762,15 @@
 
   .shipment-details {
     grid-template-columns: 1fr;
+  }
+
+  .shipment-parcels li {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .shipment-parcels li strong {
+    text-align: left;
   }
 }

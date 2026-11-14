@@ -3,8 +3,10 @@ package com.perubusSystem.perubus_system.controller;
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.model.Encomienda;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
+import com.perubusSystem.perubus_system.repository.BultoEncomiendaRepository;
 import com.perubusSystem.perubus_system.service.EncomiendaService;
 import com.perubusSystem.perubus_system.dto.ClienteResumen;
+import com.perubusSystem.perubus_system.dto.BultoEncomiendaRespuesta;
 import com.perubusSystem.perubus_system.dto.ConfirmacionEntregaSolicitud;
 import com.perubusSystem.perubus_system.dto.EncomiendaConsulta;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +17,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.NoSuchElementException;
 import java.util.Locale;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import jakarta.servlet.http.HttpSession;
 
 @RestController
@@ -27,6 +31,9 @@ public class EncomiendaController {
 
     @Autowired
     private EncomiendaService encomiendaService;
+
+    @Autowired
+    private BultoEncomiendaRepository bultoRepository;
 
     // ==========================================
     // CUS-02: COTIZAR ENVÍO
@@ -126,6 +133,50 @@ public class EncomiendaController {
         }
     }
 
+    @PostMapping("/{codigoTracking}/disponible-recojo")
+    public ResponseEntity<?> marcarDisponibleParaRecojo(
+            @PathVariable String codigoTracking,
+            HttpSession session) {
+        Object usuarioId = session.getAttribute("idUsuario");
+        if (!(usuarioId instanceof Long id)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensaje", "Inicia sesión como personal para actualizar el estado."));
+        }
+        try {
+            Encomienda encomienda = encomiendaService.marcarDisponibleParaRecojo(
+                    codigoTracking.trim().toUpperCase(Locale.ROOT), id);
+            return ResponseEntity.ok(Map.of(
+                    "codigoTracking", encomienda.getCodigoTracking(),
+                    "estadoLogistico", encomienda.getEstadoLogistico()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{codigoTracking}/iniciar-reparto")
+    public ResponseEntity<?> iniciarReparto(
+            @PathVariable String codigoTracking,
+            HttpSession session) {
+        Object usuarioId = session.getAttribute("idUsuario");
+        if (!(usuarioId instanceof Long id)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensaje", "Inicia sesión como personal para actualizar el estado."));
+        }
+        try {
+            Encomienda encomienda = encomiendaService.iniciarReparto(
+                    codigoTracking.trim().toUpperCase(Locale.ROOT), id);
+            return ResponseEntity.ok(Map.of(
+                    "codigoTracking", encomienda.getCodigoTracking(),
+                    "estadoLogistico", encomienda.getEstadoLogistico()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        }
+    }
+
     @PostMapping("/{codigoTracking}/confirmar-entrega")
     public ResponseEntity<?> confirmarEntrega(
             @PathVariable String codigoTracking,
@@ -171,7 +222,22 @@ public class EncomiendaController {
                 encomienda.getRuta(),
                 encomienda.getDireccionDestinatario(),
                 fechaViaje,
-                numeroBus);
+                numeroBus,
+                convertirBultos(encomienda));
+    }
+
+    private List<BultoEncomiendaRespuesta> convertirBultos(Encomienda encomienda) {
+        Double pesoOriginal = encomienda.getPesoOriginal() == null
+                ? encomienda.getPeso()
+                : encomienda.getPesoOriginal();
+        List<BultoEncomiendaRespuesta> bultos = new ArrayList<>();
+        bultos.add(new BultoEncomiendaRespuesta(encomienda.getDescripcion(), pesoOriginal, true));
+        bultos.addAll(bultoRepository
+                .findByEncomienda_IdEncomiendaOrderByFechaRegistroAsc(encomienda.getIdEncomienda())
+                .stream()
+                .map(bulto -> new BultoEncomiendaRespuesta(bulto.getDescripcion(), bulto.getPeso(), false))
+                .toList());
+        return bultos;
     }
 
     private ClienteResumen convertirCliente(Cliente cliente) {

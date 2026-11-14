@@ -65,9 +65,61 @@ class EncomiendaServiceTest {
 
         Encomienda resultado = service.confirmarEntrega("PERU-ABCDEFGH", 5L, "Rosa Aybar");
 
-        assertThat(resultado.getEstadoLogistico()).isEqualTo("Entregado");
+        assertThat(resultado.getEstadoLogistico()).isEqualTo("Recogido");
         verify(encomiendaRepository).save(encomienda);
         verify(eventoTrackingRepository).save(any());
+    }
+
+    @Test
+    void encomiendaEnAgenciaPuedeQuedarDisponibleParaRecojo() {
+        encomienda.setEstadoLogistico("Llegó a agencia de destino");
+        when(encomiendaRepository.save(any(Encomienda.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+
+        Encomienda resultado = service.marcarDisponibleParaRecojo("PERU-ABCDEFGH", 5L);
+
+        assertThat(resultado.getEstadoLogistico()).isEqualTo("Disponible para recojo");
+        verify(eventoTrackingRepository).save(any());
+    }
+
+    @Test
+    void encomiendaEnAgenciaPuedeIniciarRepartoADomicilio() {
+        encomienda.setEstadoLogistico("Llegó a agencia de destino");
+        encomienda.setDireccionDestinatario("Av. Prueba 123");
+        when(encomiendaRepository.save(any(Encomienda.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+
+        Encomienda resultado = service.iniciarReparto("PERU-ABCDEFGH", 5L);
+
+        assertThat(resultado.getEstadoLogistico()).isEqualTo("En reparto");
+        verify(eventoTrackingRepository).save(any());
+    }
+
+    @Test
+    void noPermiteIniciarRepartoSinDireccionDelDestinatario() {
+        encomienda.setEstadoLogistico("Llegó a agencia de destino");
+
+        assertThatThrownBy(() -> service.iniciarReparto("PERU-ABCDEFGH", 5L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("dirección del destinatario");
+    }
+
+    @Test
+    void repartoConfirmadoFinalizaComoEntregado() {
+        encomienda.setEstadoLogistico("En reparto");
+        when(encomiendaRepository.save(any(Encomienda.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+
+        Encomienda resultado = service.confirmarEntrega("PERU-ABCDEFGH", 5L, "Rosa Aybar");
+
+        assertThat(resultado.getEstadoLogistico()).isEqualTo("Entregado");
+    }
+
+    @Test
+    void recojoConfirmadoFinalizaComoRecogido() {
+        encomienda.setEstadoLogistico("Disponible para recojo");
+        when(encomiendaRepository.save(any(Encomienda.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+
+        Encomienda resultado = service.confirmarEntrega("PERU-ABCDEFGH", 5L, "Rosa Aybar");
+
+        assertThat(resultado.getEstadoLogistico()).isEqualTo("Recogido");
     }
 
     @Test
