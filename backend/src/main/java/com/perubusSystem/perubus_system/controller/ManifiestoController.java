@@ -29,6 +29,31 @@ public class ManifiestoController {
         }
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<?> actualizar(@PathVariable Long id, @RequestBody ManifiestoSolicitud datos) {
+        try {
+            return ResponseEntity.ok(manifiestoService.actualizar(id, datos));
+        } catch (NoSuchElementException e) {
+            return error(HttpStatus.NOT_FOUND, e);
+        } catch (IllegalArgumentException e) {
+            return error(HttpStatus.BAD_REQUEST, e);
+        } catch (IllegalStateException e) {
+            return error(HttpStatus.CONFLICT, e);
+        }
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<?> eliminar(@PathVariable Long id) {
+        try {
+            manifiestoService.eliminar(id);
+            return ResponseEntity.noContent().build();
+        } catch (NoSuchElementException e) {
+            return error(HttpStatus.NOT_FOUND, e);
+        } catch (IllegalStateException e) {
+            return error(HttpStatus.CONFLICT, e);
+        }
+    }
+
     @GetMapping
     public ResponseEntity<?> listar() {
         return ResponseEntity.ok(manifiestoService.listar());

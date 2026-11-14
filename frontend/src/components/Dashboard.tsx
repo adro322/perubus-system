@@ -1,12 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import './Dashboard.css';
+import { etiquetaEstadoEncomienda } from './estadoEncomienda';
+import ConfirmacionModal from './ConfirmacionModal';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [usuarioId] = useState(() => Number(sessionStorage.getItem('idUsuario')));
   const [vistaActual, setVistaActual] = useState('registro_encomienda'); 
+  const [pestanaNotificaciones, setPestanaNotificaciones] = useState<'solicitudes' | 'bultos'>('solicitudes');
   const [mensaje, setMensaje] = useState('');
 
   // Estados Cliente
@@ -33,7 +36,14 @@ export default function Dashboard() {
   const [descripcion, setDescripcion] = useState('');
   const [avisoDocumento, setAvisoDocumento] = useState<{ vista: string; texto: string; ok: boolean } | null>(null);
   const [listaManifiestos, setListaManifiestos] = useState<any[]>([]);
+  const [solicitudesPendientes, setSolicitudesPendientes] = useState<any[]>([]);
   const [manifiestoForm, setManifiestoForm] = useState({ numBus: '', ruta: '', fechaViaje: '', capacidadKg: '' });
+  const [manifiestoEditando, setManifiestoEditando] = useState<number | null>(null);
+  const [confirmarEdicionManifiesto, setConfirmarEdicionManifiesto] = useState(false);
+  const [manifiestoAEliminar, setManifiestoAEliminar] = useState<any>(null);
+  const [solicitudAResolver, setSolicitudAResolver] = useState<{ solicitud: any; aprobar: boolean } | null>(null);
+  const [comentarioResolucion, setComentarioResolucion] = useState('');
+  const [confirmacionProcesando, setConfirmacionProcesando] = useState(false);
   const [encomiendaAAsignar, setEncomiendaAAsignar] = useState<any>(null);
   const [manifiestoElegido, setManifiestoElegido] = useState('');
   const [asignando, setAsignando] = useState(false);
@@ -42,7 +52,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (vistaActual === 'lista_clientes') cargarClientes();
-    if (vistaActual === 'lista_encomiendas') cargarEncomiendas();
+    if (vistaActual === 'lista_encomiendas') {
+      cargarEncomiendas();
+    }
+    if (vistaActual === 'notificaciones') {
+      cargarSolicitudesPendientes();
+    }
     if (vistaActual === 'lista_manifiestos') {
       cargarManifiestos();
       cargarEncomiendas();
@@ -106,22 +121,52 @@ export default function Dashboard() {
     }
   };
 
-  const confirmarEntrega = async (codigoTracking: string) => {
-    const recibidoPor = window.prompt('Nombre de la persona que recibe la encomienda:')?.trim();
+  const actualizarEstadoDestino = async (
+    codigoTracking: string,
+    accion: 'disponible-recojo' | 'iniciar-reparto',
+    estadoLogistico: string
+  ) => {
+    if (llegadaConfirmando) return;
+    setLlegadaConfirmando(codigoTracking);
+    try {
+      const res = await axios.post(
+        `http://localhost:8080/api/encomiendas/${encodeURIComponent(codigoTracking)}/${accion}`,
+        {},
+        { withCredentials: true }
+      );
+      setListaEncomiendas(actual => actual.map(encomienda =>
+        encomienda.codigoTracking === codigoTracking
+          ? { ...encomienda, estadoLogistico: res.data.estadoLogistico }
+          : encomienda
+      ));
+      mostrarMensaje(`${estadoLogistico}: ${codigoTracking}`);
+    } catch (error: unknown) {
+      alert(axios.isAxiosError<{ mensaje?: string }>(error)
+        ? error.response?.data?.mensaje || 'No se pudo actualizar el estado de destino.'
+        : 'No se pudo actualizar el estado de destino.');
+    } finally {
+      setLlegadaConfirmando('');
+    }
+  };
+
+  const confirmarEntrega = async (codigoTracking: string, tipo: 'recojo' | 'entrega') => {
+    const recibidoPor = window.prompt(
+      `Nombre de la persona que ${tipo === 'recojo' ? 'recoge' : 'recibe'} la encomienda:`
+    )?.trim();
     if (!recibidoPor) return;
     setLlegadaConfirmando(codigoTracking);
     try {
-      await axios.post(
+      const res = await axios.post(
         `http://localhost:8080/api/encomiendas/${encodeURIComponent(codigoTracking)}/confirmar-entrega`,
         { recibidoPor },
         { withCredentials: true }
       );
       setListaEncomiendas(actual => actual.map(encomienda =>
         encomienda.codigoTracking === codigoTracking
-          ? { ...encomienda, estadoLogistico: 'Entregado' }
+          ? { ...encomienda, estadoLogistico: res.data.estadoLogistico }
           : encomienda
       ));
-      mostrarMensaje(`Entrega confirmada para ${codigoTracking}`);
+      mostrarMensaje(`${res.data.estadoLogistico} confirmado para ${codigoTracking}`);
     } catch (error: unknown) {
       alert(axios.isAxiosError<{ mensaje?: string }>(error)
         ? error.response?.data?.mensaje || 'No se pudo confirmar la entrega.'
@@ -183,18 +228,138 @@ export default function Dashboard() {
     } catch (error) { console.error("Error al cargar manifiestos"); }
   };
 
+  const cargarSolicitudesPendientes = useCallback(async () => {
+    try {
+      const res = await axios.get('http://localhost:8080/api/encomiendas/solicitudes-pendientes', {
+        withCredentials: true
+      });
+      setSolicitudesPendientes(res.data);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        setSolicitudesPendientes([]);
+        setMensaje('La sesión de personal expiró. Inicia sesión nuevamente para revisar las solicitudes.');
+        return;
+      }
+      console.error('Error al cargar solicitudes pendientes:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (vistaActual !== 'notificaciones') return;
+    const intervalo = window.setInterval(() => {
+      void cargarSolicitudesPendientes();
+    }, 30_000);
+    return () => window.clearInterval(intervalo);
+  }, [vistaActual, cargarSolicitudesPendientes]);
+
+  const solicitudesAdmin = solicitudesPendientes.filter((solicitud: any) => solicitud.tipo !== 'AGREGAR_BULTO');
+  const bultosNotificados = solicitudesPendientes.filter((solicitud: any) => solicitud.tipo === 'AGREGAR_BULTO');
+  const notificacionesPendientes = solicitudesPendientes.filter((solicitud: any) => solicitud.estado === 'PENDIENTE').length;
+
+  const resolverSolicitud = async () => {
+    if (!solicitudAResolver || confirmacionProcesando) return;
+    const { solicitud, aprobar } = solicitudAResolver;
+    const comentario = comentarioResolucion.trim();
+    if (!aprobar && !comentario) {
+      alert('Indica el motivo para rechazar esta solicitud.');
+      return;
+    }
+    setConfirmacionProcesando(true);
+    try {
+      await axios.post(
+        `http://localhost:8080/api/encomiendas/solicitudes/${solicitud.idSolicitud}/resolver`,
+        { aprobar, comentario },
+        { withCredentials: true }
+      );
+      mostrarMensaje(`Solicitud ${aprobar ? 'aprobada' : 'rechazada'}`);
+      setSolicitudAResolver(null);
+      setComentarioResolucion('');
+      await Promise.all([cargarSolicitudesPendientes(), cargarEncomiendas()]);
+    } catch (error: unknown) {
+      alert(axios.isAxiosError<{ mensaje?: string }>(error)
+        ? error.response?.data?.mensaje || 'No se pudo resolver la solicitud.'
+        : 'No se pudo resolver la solicitud.');
+    } finally {
+      setConfirmacionProcesando(false);
+    }
+  };
+
   const crearManifiesto = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (manifiestoEditando !== null) {
+      setConfirmarEdicionManifiesto(true);
+      return;
+    }
     try {
-      await axios.post('http://localhost:8080/api/manifiestos', {
+      const datos = {
         ...manifiestoForm,
         capacidadKg: Number(manifiestoForm.capacidadKg)
-      });
+      };
+      await axios.post('http://localhost:8080/api/manifiestos', datos);
       mostrarMensaje('Manifiesto creado exitosamente');
       setManifiestoForm({ numBus: '', ruta: '', fechaViaje: '', capacidadKg: '' });
       cargarManifiestos();
     } catch (error: any) {
-      alert(error.response?.data?.mensaje || 'Error al crear el manifiesto');
+      alert(error.response?.data?.mensaje || 'No se pudo guardar el manifiesto');
+    }
+  };
+
+  const guardarEdicionManifiesto = async () => {
+    if (manifiestoEditando === null || confirmacionProcesando) return;
+    setConfirmacionProcesando(true);
+    try {
+      await axios.put(`http://localhost:8080/api/manifiestos/${manifiestoEditando}`, {
+        ...manifiestoForm,
+        capacidadKg: Number(manifiestoForm.capacidadKg)
+      });
+      mostrarMensaje(`Manifiesto N° ${manifiestoEditando} actualizado exitosamente`);
+      setConfirmarEdicionManifiesto(false);
+      cancelarEdicionManifiesto();
+      await cargarManifiestos();
+    } catch (error: any) {
+      alert(error.response?.data?.mensaje || 'No se pudo actualizar el manifiesto');
+    } finally {
+      setConfirmacionProcesando(false);
+    }
+  };
+
+  const editarManifiesto = (manifiesto: any) => {
+    setManifiestoEditando(manifiesto.idManifiesto);
+    setManifiestoForm({
+      numBus: manifiesto.numBus || '',
+      ruta: manifiesto.ruta || '',
+      fechaViaje: manifiesto.fechaViaje || '',
+      capacidadKg: String(manifiesto.capacidadKg ?? '')
+    });
+  };
+
+  const cancelarEdicionManifiesto = () => {
+    setManifiestoEditando(null);
+    setManifiestoForm({ numBus: '', ruta: '', fechaViaje: '', capacidadKg: '' });
+  };
+
+  const eliminarManifiesto = async (manifiesto: any) => {
+    const cantidadEncomiendas = manifiesto.encomiendas?.length ?? 0;
+    if (cantidadEncomiendas > 0) {
+      alert('No se puede eliminar un manifiesto que tiene encomiendas asignadas.');
+      return;
+    }
+    setManifiestoAEliminar(manifiesto);
+  };
+
+  const confirmarEliminarManifiesto = async () => {
+    if (!manifiestoAEliminar || confirmacionProcesando) return;
+    setConfirmacionProcesando(true);
+    try {
+      await axios.delete(`http://localhost:8080/api/manifiestos/${manifiestoAEliminar.idManifiesto}`);
+      if (manifiestoEditando === manifiestoAEliminar.idManifiesto) cancelarEdicionManifiesto();
+      mostrarMensaje(`Manifiesto N° ${manifiestoAEliminar.idManifiesto} eliminado`);
+      setManifiestoAEliminar(null);
+      await cargarManifiestos();
+    } catch (error: any) {
+      alert(error.response?.data?.mensaje || 'No se pudo eliminar el manifiesto');
+    } finally {
+      setConfirmacionProcesando(false);
     }
   };
 
@@ -381,6 +546,27 @@ export default function Dashboard() {
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', color: '#666' }}>Recepción</div>
           <button onClick={() => setVistaActual('registro_encomienda')} style={obtenerEstiloMenu(vistaActual === 'registro_encomienda')}>Nueva Encomienda</button>
           <button onClick={() => setVistaActual('lista_encomiendas')} style={obtenerEstiloMenu(vistaActual === 'lista_encomiendas')}>Historial Encomiendas</button>
+          <button
+            type="button"
+            aria-label={`Notificaciones${notificacionesPendientes > 0 ? `, ${notificacionesPendientes} pendientes` : ''}`}
+            onClick={() => setVistaActual('notificaciones')}
+            style={{
+              ...obtenerEstiloMenu(vistaActual === 'notificaciones'),
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              gap: '10px',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M10 21h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            <span style={{ flex: 1, textAlign: 'left' }}>Notificaciones</span>
+            {notificacionesPendientes > 0 && (
+              <span className="notification-badge">{notificacionesPendientes}</span>
+            )}
+          </button>
           
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Directorio</div>
           <button onClick={() => setVistaActual('registro_cliente')} style={obtenerEstiloMenu(vistaActual === 'registro_cliente')}>Nuevo Cliente</button>
@@ -421,7 +607,7 @@ export default function Dashboard() {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', color: '#3F4254' }}>
                     <div><strong>Tracking:</strong> {resumenRegistrado.codigoTracking}</div>
-                    <div><strong>Estado:</strong> {resumenRegistrado.estadoLogistico}</div>
+                    <div><strong>Estado:</strong> {etiquetaEstadoEncomienda(resumenRegistrado.estadoLogistico)}</div>
                     <div><strong>Peso:</strong> {resumenRegistrado.peso} Kg</div>
                     <div><strong>Tarifa:</strong> S/ {Number(resumenRegistrado.tarifaBase).toFixed(2)}</div>
                     <div><strong>Descripción:</strong> {resumenRegistrado.descripcion}</div>
@@ -603,8 +789,106 @@ export default function Dashboard() {
             </div>
           )}
 
+          {vistaActual === 'notificaciones' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '18px' }}>
+                <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '24px' }}>Notificaciones</h2>
+                <button type="button" onClick={() => void cargarSolicitudesPendientes()} style={btnSecondary}>Actualizar</button>
+              </div>
+              <section style={{ padding: '20px', border: '1px solid #E4E6EF', borderRadius: '8px', backgroundColor: 'white' }}>
+                <div role="tablist" aria-label="Tipo de notificaciones" className="notification-tabs">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={pestanaNotificaciones === 'solicitudes'}
+                    className={pestanaNotificaciones === 'solicitudes' ? 'notification-tab active' : 'notification-tab'}
+                    onClick={() => setPestanaNotificaciones('solicitudes')}
+                  >
+                    Solicitudes <span>{solicitudesAdmin.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={pestanaNotificaciones === 'bultos'}
+                    className={pestanaNotificaciones === 'bultos' ? 'notification-tab active' : 'notification-tab'}
+                    onClick={() => setPestanaNotificaciones('bultos')}
+                  >
+                    Bultos agregados <span>{bultosNotificados.length}</span>
+                  </button>
+                </div>
+                {pestanaNotificaciones === 'solicitudes' ? (
+                  solicitudesAdmin.length === 0
+                    ? <p className="notification-empty">No hay solicitudes pendientes de revisión.</p>
+                    : <div className="notification-list">
+                      {solicitudesAdmin.map((solicitud: any) => (
+                        <article key={solicitud.idSolicitud} className="notification-card">
+                          <div className="notification-card-heading">
+                            <strong>
+                              {solicitud.tipo === 'CANCELACION' ? 'Cancelación' : 'Cambio de dirección'} · {solicitud.codigoTracking}
+                            </strong>
+                            <span>{solicitud.cliente}</span>
+                          </div>
+                          <p><strong>Dirección actual:</strong> {solicitud.direccionActual || 'No registrada'}<br />
+                            <strong>Solicitada:</strong> {solicitud.direccionSolicitada}</p>
+                          {solicitud.respuesta && <p>{solicitud.respuesta}</p>}
+                          <p className="notification-status pending">Estado: {etiquetaEstadoSolicitudAdmin(solicitud.estado)}</p>
+                          {solicitud.estado === 'PENDIENTE' && (
+                            <div className="notification-actions">
+                              <button type="button" onClick={() => {
+                                setComentarioResolucion('');
+                                setSolicitudAResolver({ solicitud, aprobar: true });
+                              }} style={btnPrimary}>Aprobar</button>
+                              <button type="button" onClick={() => {
+                                setComentarioResolucion('');
+                                setSolicitudAResolver({ solicitud, aprobar: false });
+                              }} style={btnLight}>Rechazar</button>
+                            </div>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                ) : (
+                  bultosNotificados.length === 0
+                    ? <p className="notification-empty">No hay bultos adicionales registrados.</p>
+                    : <div className="notification-list">
+                      {bultosNotificados.map((solicitud: any) => (
+                        <article key={solicitud.idSolicitud} className="notification-card">
+                          <div className="notification-card-heading">
+                            <strong>Bulto adicional · {solicitud.codigoTracking}</strong>
+                            <span>{solicitud.cliente}</span>
+                          </div>
+                          <p><strong>Descripción:</strong> {solicitud.descripcionBulto || 'No especificada'}<br />
+                            <strong>Peso:</strong> {solicitud.pesoBulto ?? '—'} kg
+                            {solicitud.montoAdicional != null && Number(solicitud.montoAdicional) > 0 && (
+                              <><br /><strong>Importe adicional:</strong> S/ {Number(solicitud.montoAdicional).toFixed(2)}</>
+                            )}
+                          </p>
+                          {solicitud.respuesta && <p>{solicitud.respuesta}</p>}
+                          <p className={solicitud.estado === 'PENDIENTE' ? 'notification-status pending' : 'notification-status'}>
+                            Estado: {etiquetaEstadoSolicitudAdmin(solicitud.estado)}
+                          </p>
+                          {solicitud.estado === 'PENDIENTE' && (
+                            <div className="notification-actions">
+                              <button type="button" onClick={() => {
+                                setComentarioResolucion('');
+                                setSolicitudAResolver({ solicitud, aprobar: true });
+                              }} style={btnPrimary}>Aprobar</button>
+                              <button type="button" onClick={() => {
+                                setComentarioResolucion('');
+                                setSolicitudAResolver({ solicitud, aprobar: false });
+                              }} style={btnLight}>Rechazar</button>
+                            </div>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                )}
+              </section>
+            </div>
+          )}
+
           {/* =========================================
-              VISTA 4: LISTA DE ENCOMIENDAS 
+              VISTA 4: LISTA DE ENCOMIENDAS
              ========================================= */}
           {vistaActual === 'lista_encomiendas' && (
             <div>
@@ -635,7 +919,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', color: '#3F4254' }}>
-                    <div><strong>Estado:</strong> {encomiendaConsultada.estadoLogistico}</div>
+                    <div><strong>Estado:</strong> {etiquetaEstadoEncomienda(encomiendaConsultada.estadoLogistico)}</div>
                     <div><strong>Peso:</strong> {encomiendaConsultada.peso} Kg</div>
                     <div><strong>Descripción:</strong> {encomiendaConsultada.descripcion}</div>
                     <div><strong>Tarifa:</strong> S/ {Number(encomiendaConsultada.tarifaBase).toFixed(2)}</div>
@@ -645,6 +929,18 @@ export default function Dashboard() {
                     {encomiendaConsultada.direccionDestinatario && <div><strong>Dirección de entrega:</strong> {encomiendaConsultada.direccionDestinatario}</div>}
                     {encomiendaConsultada.fechaViaje && <div><strong>Viaje:</strong> {encomiendaConsultada.fechaViaje}</div>}
                   </div>
+                  {Array.isArray(encomiendaConsultada.bultos) && encomiendaConsultada.bultos.length > 0 && (
+                    <div style={{ marginTop: '14px', color: '#3F4254' }}>
+                      <strong>Bultos registrados:</strong>
+                      <ul style={{ margin: '6px 0 0', paddingLeft: '20px' }}>
+                        {encomiendaConsultada.bultos.map((bulto: any, index: number) => (
+                          <li key={`${encomiendaConsultada.codigoTracking}-bulto-${index}`}>
+                            {bulto.original ? 'Original' : 'Adicional'}: {bulto.descripcion || 'Sin descripción'} · {bulto.peso} kg
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
               <table style={tableStyle}>
@@ -671,7 +967,7 @@ export default function Dashboard() {
                       <td style={tdStyle}>{enc.peso} Kg</td>
                       <td style={tdStyle}>
                         <span style={{ backgroundColor: '#E8F5E9', color: '#2E7D32', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>
-                          {enc.estadoLogistico}
+                          {etiquetaEstadoEncomienda(enc.estadoLogistico)}
                         </span>
                       </td>
                       <td style={tdStyle}>
@@ -691,15 +987,51 @@ export default function Dashboard() {
                               {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Llegó a agencia destino'}
                             </button>
                           )}
-                          {enc.estadoLogistico?.toLowerCase() === 'llegó a agencia de destino' && (
-                            <button
-                              type="button"
-                              disabled={llegadaConfirmando === enc.codigoTracking}
-                              onClick={() => void confirmarEntrega(enc.codigoTracking)}
-                              style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
-                            >
-                              {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Entregar / recoger'}
-                            </button>
+                          {(enc.estadoLogistico?.toLowerCase() === 'llegó a agencia de destino'
+                            || enc.estadoLogistico?.toLowerCase() === 'disponible para recojo'
+                            || enc.estadoLogistico?.toLowerCase() === 'en reparto') && (
+                            <>
+                              {(enc.estadoLogistico?.toLowerCase() === 'llegó a agencia de destino') && (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={llegadaConfirmando === enc.codigoTracking}
+                                    onClick={() => void actualizarEstadoDestino(enc.codigoTracking, 'disponible-recojo', 'Disponible para recojo')}
+                                    style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                                  >
+                                    {llegadaConfirmando === enc.codigoTracking ? 'Actualizando...' : 'Disponible para recojo'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={llegadaConfirmando === enc.codigoTracking}
+                                    onClick={() => void actualizarEstadoDestino(enc.codigoTracking, 'iniciar-reparto', 'En reparto')}
+                                    style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                                  >
+                                    {llegadaConfirmando === enc.codigoTracking ? 'Actualizando...' : 'Iniciar reparto'}
+                                  </button>
+                                </>
+                              )}
+                              {enc.estadoLogistico?.toLowerCase() === 'disponible para recojo' && (
+                                <button
+                                  type="button"
+                                  disabled={llegadaConfirmando === enc.codigoTracking}
+                                  onClick={() => void confirmarEntrega(enc.codigoTracking, 'recojo')}
+                                  style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                                >
+                                  {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Confirmar recojo'}
+                                </button>
+                              )}
+                              {enc.estadoLogistico?.toLowerCase() === 'en reparto' && (
+                                <button
+                                  type="button"
+                                  disabled={llegadaConfirmando === enc.codigoTracking}
+                                  onClick={() => void confirmarEntrega(enc.codigoTracking, 'entrega')}
+                                  style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                                >
+                                  {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Confirmar entrega'}
+                                </button>
+                              )}
+                            </>
                           )}
                           <button
                             type="button"
@@ -722,7 +1054,7 @@ export default function Dashboard() {
             <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
               <h2 style={{ color: '#1E1E2D', marginTop: 0 }}>Manifiestos de Carga</h2>
               <form onSubmit={crearManifiesto} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto', gap: '12px', alignItems: 'end', marginBottom: '30px' }}>
-                <div><label style={labelStyle}>N° de bus</label><input required value={manifiestoForm.numBus} onChange={e => setManifiestoForm({ ...manifiestoForm, numBus: e.target.value })} style={inputStyle} placeholder="BUS-01" /></div>
+                <div><label style={labelStyle}>N° de bus</label><input required maxLength={20} value={manifiestoForm.numBus} onChange={e => setManifiestoForm({ ...manifiestoForm, numBus: e.target.value })} style={inputStyle} placeholder="BUS-01" /></div>
                 <div>
                   <label style={labelStyle}>Ruta</label>
                   <select required value={manifiestoForm.ruta} onChange={e => setManifiestoForm({ ...manifiestoForm, ruta: e.target.value })} style={inputStyle}>
@@ -732,7 +1064,12 @@ export default function Dashboard() {
                 </div>
                 <div><label style={labelStyle}>Fecha de viaje</label><input required type="date" value={manifiestoForm.fechaViaje} onChange={e => setManifiestoForm({ ...manifiestoForm, fechaViaje: e.target.value })} style={inputStyle} /></div>
                 <div><label style={labelStyle}>Capacidad (Kg)</label><input required type="number" min="1" step="0.01" value={manifiestoForm.capacidadKg} onChange={e => setManifiestoForm({ ...manifiestoForm, capacidadKg: e.target.value })} style={inputStyle} /></div>
-                <button type="submit" style={btnPrimary}>Crear</button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button type="submit" style={btnPrimary}>{manifiestoEditando === null ? 'Crear' : 'Guardar cambios'}</button>
+                  {manifiestoEditando !== null && (
+                    <button type="button" onClick={cancelarEdicionManifiesto} style={btnLight}>Cancelar</button>
+                  )}
+                </div>
               </form>
               <table style={tableStyle}>
                 <thead>
@@ -756,7 +1093,19 @@ export default function Dashboard() {
                       <td style={tdStyle}>{Number(m.pesoTotalCarga || 0).toFixed(2)} / {Number(m.capacidadKg || 0).toFixed(2)} Kg</td>
                       <td style={tdStyle}>{m.encomiendas.length}</td>
                       <td style={tdStyle}>
-                        <button type="button" onClick={() => imprimirManifiesto(m)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Imprimir / PDF</button>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          <button type="button" onClick={() => editarManifiesto(m)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Editar</button>
+                          <button
+                            type="button"
+                            onClick={() => void eliminarManifiesto(m)}
+                            disabled={(m.encomiendas?.length ?? 0) > 0}
+                            title={(m.encomiendas?.length ?? 0) > 0 ? 'No se puede eliminar: tiene encomiendas asignadas' : 'Eliminar manifiesto'}
+                            style={{ padding: '6px 12px', backgroundColor: (m.encomiendas?.length ?? 0) > 0 ? '#F3F6F9' : '#FDECEC', color: (m.encomiendas?.length ?? 0) > 0 ? '#B5B5C3' : '#B42318', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: (m.encomiendas?.length ?? 0) > 0 ? 'not-allowed' : 'pointer' }}
+                          >
+                            Eliminar
+                          </button>
+                          <button type="button" onClick={() => imprimirManifiesto(m)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Imprimir / PDF</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -876,6 +1225,49 @@ export default function Dashboard() {
         </div>
       );
     })()}
+    {confirmarEdicionManifiesto && (
+      <ConfirmacionModal
+        titulo="Confirmar cambios del manifiesto"
+        mensaje={`¿Guardar los cambios del manifiesto N° ${manifiestoEditando}? Se validarán la ruta y la capacidad frente a las encomiendas asignadas.`}
+        textoConfirmar="Guardar cambios"
+        procesando={confirmacionProcesando}
+        onCancelar={() => setConfirmarEdicionManifiesto(false)}
+        onConfirmar={() => void guardarEdicionManifiesto()}
+      />
+    )}
+    {manifiestoAEliminar && (
+      <ConfirmacionModal
+        titulo="Eliminar manifiesto"
+        mensaje={`¿Eliminar el manifiesto N° ${manifiestoAEliminar.idManifiesto} del bus ${manifiestoAEliminar.numBus}? Esta acción no se puede deshacer.`}
+        textoConfirmar="Eliminar manifiesto"
+        peligro
+        procesando={confirmacionProcesando}
+        onCancelar={() => setManifiestoAEliminar(null)}
+        onConfirmar={() => void confirmarEliminarManifiesto()}
+      />
+    )}
+    {solicitudAResolver && (
+      <ConfirmacionModal
+        titulo={solicitudAResolver.aprobar ? 'Aprobar solicitud del cliente' : 'Rechazar solicitud del cliente'}
+        mensaje={`${solicitudAResolver.aprobar ? '¿Confirmas la aprobación' : '¿Confirmas el rechazo'} de la solicitud de ${solicitudAResolver.solicitud.tipo === 'CANCELACION' ? 'cancelación' : solicitudAResolver.solicitud.tipo === 'CAMBIO_DIRECCION' ? 'cambio de dirección' : 'bulto adicional'} para la encomienda ${solicitudAResolver.solicitud.codigoTracking}?`}
+        textoConfirmar={solicitudAResolver.aprobar ? 'Aprobar solicitud' : 'Rechazar solicitud'}
+        peligro={!solicitudAResolver.aprobar}
+        procesando={confirmacionProcesando}
+        onCancelar={() => setSolicitudAResolver(null)}
+        onConfirmar={() => void resolverSolicitud()}
+      >
+        <label className="confirmation-comment">
+          {solicitudAResolver.aprobar ? 'Comentario para el cliente (opcional)' : 'Motivo del rechazo (obligatorio)'}
+          <textarea
+            maxLength={500}
+            required={!solicitudAResolver.aprobar}
+            value={comentarioResolucion}
+            onChange={(event) => setComentarioResolucion(event.target.value)}
+            rows={3}
+          />
+        </label>
+      </ConfirmacionModal>
+    )}
     {!manifiestoImprimir && (encomiendaImprimir || encomiendaConsultada || resumenRegistrado) && (() => {
       const reporte = encomiendaImprimir || (vistaActual === 'lista_encomiendas' ? encomiendaConsultada : (resumenRegistrado || encomiendaConsultada));
       if (!reporte) return null;
@@ -902,7 +1294,7 @@ export default function Dashboard() {
           <p className="ticket-titulo">COMPROBANTE DE ENCOMIENDA</p>
           <div className="ticket-linea" />
           <p><strong>Tracking:</strong> {reporte.codigoTracking}</p>
-          <p><strong>Estado:</strong> {reporte.estadoLogistico}</p>
+          <p><strong>Estado:</strong> {etiquetaEstadoEncomienda(reporte.estadoLogistico)}</p>
           <p><strong>Fecha de emisión:</strong> {new Date().toLocaleDateString('es-PE')}</p>
           <div className="ticket-linea" />
           <p><strong>Remitente:</strong> {remitenteNombre}{remitenteDoc}</p>
@@ -912,8 +1304,18 @@ export default function Dashboard() {
           {reporte.numeroBus && <p><strong>Bus asignado:</strong> {reporte.numeroBus}</p>}
           {reporte.fechaViaje && <p><strong>Fecha de viaje:</strong> {reporte.fechaViaje}</p>}
           <div className="ticket-linea" />
-          <p><strong>Descripción:</strong> {reporte.descripcion || 'Sin descripción'}</p>
-          <p><strong>Peso:</strong> {reporte.peso} Kg</p>
+          <p><strong>Bultos del envío:</strong></p>
+          <ul className="ticket-bultos">
+            {(Array.isArray(reporte.bultos) && reporte.bultos.length > 0
+              ? reporte.bultos
+              : [{ descripcion: reporte.descripcion || 'Sin descripción', peso: reporte.peso, original: true }]
+            ).map((bulto: any, index: number) => (
+              <li key={`${reporte.codigoTracking}-ticket-bulto-${index}`}>
+                {bulto.original ? 'Original' : `Adicional ${index}`} — {bulto.descripcion || 'Sin descripción'} · {bulto.peso} kg
+              </li>
+            ))}
+          </ul>
+          <p><strong>Peso total:</strong> {reporte.peso} Kg</p>
           <p style={{ fontSize: '13px', marginTop: '6px' }}><strong>Tarifa:</strong> S/ {Number(reporte.tarifaBase || 0).toFixed(2)}</p>
           <div className="ticket-linea" />
           <p className="ticket-pie">Conserve este comprobante para consultar el estado de su encomienda.</p>
@@ -922,6 +1324,23 @@ export default function Dashboard() {
     })()}
     </>
   );
+}
+
+function etiquetaEstadoSolicitudAdmin(estado: string) {
+  switch (estado) {
+    case 'PENDIENTE':
+      return 'Pendiente de revisión';
+    case 'PENDIENTE_PAGO':
+      return 'Aprobado · pendiente de pago adicional';
+    case 'APLICADA':
+      return 'Agregado automáticamente antes del pago';
+    case 'APROBADA':
+      return 'Aprobada y registrada';
+    case 'RECHAZADA':
+      return 'Rechazada';
+    default:
+      return estado;
+  }
 }
 
 // === ESTILOS REUTILIZABLES (Diseño Clean) ===
