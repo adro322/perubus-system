@@ -74,6 +74,8 @@ type RegistroForm = {
   password: string;
 };
 
+type TabSeccion = 'resumen' | 'solicitudes' | 'historial';
+
 const api = axios.create({
   baseURL: 'http://localhost:8080/api/portal',
   withCredentials: true,
@@ -92,6 +94,7 @@ export default function PortalCliente() {
   const [cliente, setCliente] = useState<ClientePortal | null>(null);
   const [encomiendas, setEncomiendas] = useState<EncomiendaPortal[]>([]);
   const [solicitudes, setSolicitudes] = useState<SolicitudPortal[]>([]);
+  const [tabPorEnvio, setTabPorEnvio] = useState<Record<string, TabSeccion>>({});
   const [direccionEdicion, setDireccionEdicion] = useState<Record<string, string>>({});
   const [descripcionBultoEdicion, setDescripcionBultoEdicion] = useState<Record<string, string>>({});
   const [pesoBultoEdicion, setPesoBultoEdicion] = useState<Record<string, string>>({});
@@ -165,6 +168,10 @@ export default function PortalCliente() {
     } catch {
       setError('No se pudo actualizar el seguimiento. Inténtalo nuevamente.');
     }
+  };
+
+  const cambiarTabEnvio = (codigoTracking: string, tab: TabSeccion) => {
+    setTabPorEnvio((actual) => ({ ...actual, [codigoTracking]: tab }));
   };
 
   const prepararSolicitud = (
@@ -308,7 +315,7 @@ export default function PortalCliente() {
         </a>
         {cliente && (
           <div className="portal-user">
-            <span>Hola, {cliente.nombres}</span>
+            <span>Hola, <strong>{cliente.nombres}</strong></span>
             <button type="button" className="portal-logout" onClick={() => void cerrarSesion()}>
               Cerrar sesión
             </button>
@@ -317,279 +324,353 @@ export default function PortalCliente() {
       </header>
 
       {cliente ? (
-        <section className="portal-content">
-          <div className="portal-heading">
-            <span className="portal-eyebrow">PORTAL DE CLIENTES</span>
-            <h1>Seguimiento de tus envíos</h1>
-            <p>Consulta los envíos en los que apareces como remitente o destinatario.</p>
-            <button type="button" className="portal-refresh" onClick={() => void actualizarSeguimiento()}>
-              Actualizar seguimiento
-            </button>
+        <>
+          <div className="portal-hero-banner">
+            <div className="portal-hero-inner">
+              <div>
+                <span className="portal-eyebrow portal-eyebrow-light">PORTAL DE CLIENTES</span>
+                <h1>Seguimiento de tus envíos</h1>
+                <p>Consulta los envíos en los que apareces como remitente o destinatario.</p>
+              </div>
+              <button type="button" className="portal-refresh" onClick={() => void actualizarSeguimiento()}>
+                ↻ Actualizar seguimiento
+              </button>
+            </div>
           </div>
 
-          {error && <div className="portal-alert portal-alert-error" role="alert">{error}</div>}
-          {aviso && <div className="portal-alert portal-alert-success" role="status">{aviso}</div>}
-          {encomiendas.length === 0 ? (
-            <div className="portal-empty">
-              <span className="portal-empty-icon">⌕</span>
-              <h2>Aún no tienes envíos asociados</h2>
-              <p>Cuando registren una encomienda con tu documento, podrás verla aquí.</p>
-            </div>
-          ) : (
-            <div className="portal-shipment-list">
-              {encomiendas.map((envio) => (
-                <article className="portal-shipment" key={envio.codigoTracking}>
-                  <div className="shipment-heading">
-                    <div>
-                      <span className="shipment-label">CÓDIGO DE TRACKING</span>
-                      <h2>{envio.codigoTracking}</h2>
-                    </div>
-                    <span className={envio.estimacionVencida ? 'shipment-status shipment-status-late' : 'shipment-status'}>
-                      {envio.estimacionVencida
-                        ? `Retrasado · ${etiquetaEstadoEncomienda(envio.estadoActual)}`
-                        : etiquetaEstadoEncomienda(envio.estadoActual)}
-                    </span>
-                  </div>
-                  <div className="shipment-details">
-                    <p><span>Tu rol</span>{envio.rolCliente}</p>
-                    <p><span>{envio.rolCliente === 'Remitente' ? 'Destinatario' : 'Remitente'}</span>{envio.contraparte || 'No disponible'}</p>
-                    <p><span>Ruta</span>{envio.ruta || 'Por confirmar'}</p>
-                    <p><span>Detalle</span>{envio.descripcion || 'Encomienda'}</p>
-                    <p><span>Peso total</span>{envio.pesoTotal != null ? `${envio.pesoTotal} kg` : 'No registrado'}</p>
-                    <p><span>Tarifa total</span>{envio.tarifaTotal != null ? `S/ ${envio.tarifaTotal.toFixed(2)}` : 'Por calcular'}</p>
-                    <p><span>Dirección de destino</span>{envio.direccionDestinatario || 'No registrada'}</p>
-                    <p><span>Viaje</span>{envio.fechaViaje || 'Por asignar'}</p>
-                    <p><span>Bus</span>{envio.numeroBus || 'Por asignar'}</p>
-                  </div>
-                  {envio.bultos?.length > 0 && (
-                    <div className="shipment-parcels">
-                      <h3>Bultos del envío</h3>
-                      <ul>
-                        {envio.bultos.map((bulto, index) => (
-                          <li key={`${envio.codigoTracking}-bulto-${index}`}>
-                            <span>{bulto.original ? 'Bulto original' : `Bulto adicional ${index}`}</span>
-                            <strong>{bulto.descripcion || 'Sin descripción'} · {bulto.peso != null ? `${bulto.peso} kg` : 'Peso no registrado'}</strong>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {(() => {
-                    const solicitudesEnvio = solicitudes.filter(
-                      (solicitud) => solicitud.codigoTracking === envio.codigoTracking
-                    );
-                    const solicitudPendiente = solicitudesEnvio.some(
-                      (solicitud) => solicitud.estado === 'PENDIENTE' || solicitud.estado === 'PENDIENTE_PAGO'
-                    );
-                    const solicitudEnRevision = solicitudesEnvio.some(
-                      (solicitud) => solicitud.estado === 'PENDIENTE'
-                    );
-                    const solicitudConPagoPendiente = solicitudesEnvio.some(
-                      (solicitud) => solicitud.estado === 'PENDIENTE_PAGO'
-                    );
-                    const terminal = ['Cancelado', 'Entregado', 'Recogido']
-                      .includes(envio.estadoActual);
-                    const permiteSolicitud = ['Pendiente de Pago', 'En origen']
-                      .includes(envio.estadoActual);
-                    return (
-                      <section className="shipment-requests">
-                        <h3>Solicitudes del envío</h3>
-                        {solicitudesEnvio.length > 0 && (
-                          <ul>
-                            {solicitudesEnvio.map((solicitud) => (
-                              <li key={solicitud.idSolicitud}>
-                                <strong>
-                                  {solicitud.tipo === 'CANCELACION'
-                                    ? 'Cancelación'
-                                    : solicitud.tipo === 'CAMBIO_DIRECCION' ? 'Cambio de dirección' : 'Bulto adicional'}
-                                  {' · '}{etiquetaEstadoSolicitud(solicitud.estado)}
-                                </strong>
-                                {solicitud.tipo === 'CAMBIO_DIRECCION' && solicitud.direccionSolicitada && (
-                                  <span> Dirección solicitada: {solicitud.direccionSolicitada}</span>
-                                )}
-                                {solicitud.tipo === 'AGREGAR_BULTO' && (
-                                  <span>
-                                    {' '}{solicitud.descripcionBulto || 'Bulto'} · {solicitud.pesoBulto ?? '—'} kg
-                                    {solicitud.montoAdicional != null && ` · Importe adicional: S/ ${solicitud.montoAdicional.toFixed(2)}`}
-                                  </span>
-                                )}
-                                {solicitud.respuesta && <p>{solicitud.respuesta}</p>}
-                                {envio.rolCliente === 'Remitente'
-                                  && solicitud.tipo === 'AGREGAR_BULTO'
-                                  && solicitud.estado === 'PENDIENTE_PAGO' && (
+          <section className="portal-content">
+            {error && <div className="portal-alert portal-alert-error" role="alert">{error}</div>}
+            {aviso && <div className="portal-alert portal-alert-success" role="status">{aviso}</div>}
+            {encomiendas.length === 0 ? (
+              <div className="portal-empty">
+                <span className="portal-empty-icon">⌕</span>
+                <h2>Aún no tienes envíos asociados</h2>
+                <p>Cuando registren una encomienda con tu documento, podrás verla aquí.</p>
+              </div>
+            ) : (
+              <div className="portal-shipment-list">
+                {encomiendas.map((envio) => {
+                  const tabActiva: TabSeccion = tabPorEnvio[envio.codigoTracking] ?? 'resumen';
+                  const solicitudesEnvio = solicitudes.filter(
+                    (solicitud) => solicitud.codigoTracking === envio.codigoTracking
+                  );
+                  const tienePagoPendiente = solicitudesEnvio.some(
+                    (solicitud) => solicitud.estado === 'PENDIENTE_PAGO'
+                  );
+                  const enMovimiento = envio.progreso > 0 && envio.progreso < 100 && envio.estadoActual !== 'Cancelado';
+                  const completado = envio.progreso >= 100;
+
+                  return (
+                    <article className="portal-shipment" key={envio.codigoTracking}>
+                      <div className="shipment-heading">
+                        <div>
+                          <span className="shipment-label">CÓDIGO DE TRACKING</span>
+                          <div className="shipment-code-row">
+                            <h2>{envio.codigoTracking}</h2>
+                            <span className="shipment-route-chip">🚌 {envio.ruta || 'Ruta por confirmar'}</span>
+                          </div>
+                        </div>
+                        <span className={envio.estimacionVencida ? 'shipment-status shipment-status-late' : 'shipment-status'}>
+                          {envio.estimacionVencida
+                            ? `Retrasado · ${etiquetaEstadoEncomienda(envio.estadoActual)}`
+                            : etiquetaEstadoEncomienda(envio.estadoActual)}
+                        </span>
+                      </div>
+
+                      {/* Barra de progreso con carrito animado siempre visible */}
+                      <section className="shipment-progress" aria-label={`Progreso del envío: ${envio.progreso}%`}>
+                        <div className="shipment-progress-heading">
+                          <h3>Progreso del envío</h3>
+                          <strong>{envio.progreso}%</strong>
+                        </div>
+                        <div className="progress-track">
+                          <div
+                            className={`progress-track-fill ${enMovimiento ? 'is-moving' : ''}`}
+                            style={{ width: `${envio.progreso}%` }}
+                          />
+                          <span
+                            className={`progress-truck ${enMovimiento ? 'truck-driving' : ''} ${completado ? 'truck-arrived' : ''}`}
+                            style={{ left: `${envio.progreso}%` }}
+                            aria-hidden="true"
+                          >
+                            <span className="truck-badge">{envio.progreso}%</span>
+                            <span className="truck-icon">🚚</span>
+                          </span>
+                          <div className="progress-stops">
+                            {[
+                              'Registrado',
+                              'En origen',
+                              'En tránsito',
+                              'Llegó a agencia destino',
+                              envio.estadoActual === 'Disponible para recojo'
+                                ? 'Disponible para recojo'
+                                : envio.estadoActual === 'En reparto'
+                                  ? 'En reparto'
+                                  : 'Recojo / reparto',
+                              envio.estadoActual === 'Recogido'
+                                ? 'Recogido'
+                                : envio.estadoActual === 'Entregado'
+                                  ? 'Entregado'
+                                  : 'Entrega / recojo',
+                            ].map((hito, indice) => {
+                              const porcentajeHito = [0, 20, 40, 60, 80, 100][indice];
+                              const esActual = envio.progreso === porcentajeHito;
+                              return (
+                                <span
+                                  className={`progress-stop ${envio.progreso >= porcentajeHito ? 'active' : ''} ${esActual ? 'current' : ''}`}
+                                  style={{
+                                    left: `${porcentajeHito}%`,
+                                    transform: indice === 0 ? 'none' : indice === 5 ? 'translateX(-100%)' : 'translateX(-50%)',
+                                  }}
+                                  key={hito}
+                                >
+                                  <i />
+                                  <small>{hito}</small>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </section>
+
+                      {/* Llegada estimada */}
+                      <div className={envio.estimacionVencida ? 'shipment-eta shipment-eta-late' : 'shipment-eta'}>
+                        <span className="eta-icon" aria-hidden="true">◷</span>
+                        <div>
+                          <strong>
+                            {envio.fechaEstimadaLlegada
+                              ? `Llegada estimada: ${formatearFechaSimple(envio.fechaEstimadaLlegada)}`
+                              : 'Fecha estimada pendiente'}
+                          </strong>
+                          <p>
+                            {envio.estimacionVencida
+                              ? 'La fecha estimada ya pasó. El estado real no cambia hasta que el personal registre el siguiente hito.'
+                              : envio.fechaEstimadaLlegada
+                                ? 'Fecha referencial calculada con el plazo configurado para la ruta; puede variar.'
+                                : 'Se calculará cuando la encomienda tenga un viaje programado.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Pestañas para simplificar la tarjeta */}
+                      <nav className="shipment-tabs" aria-label="Secciones de la encomienda">
+                        <button
+                          type="button"
+                          className={`shipment-tab-btn ${tabActiva === 'resumen' ? 'active' : ''}`}
+                          onClick={() => cambiarTabEnvio(envio.codigoTracking, 'resumen')}
+                        >
+                          Resumen y bultos ({envio.bultos?.length || 1})
+                        </button>
+                        <button
+                          type="button"
+                          className={`shipment-tab-btn ${tabActiva === 'solicitudes' ? 'active' : ''}`}
+                          onClick={() => cambiarTabEnvio(envio.codigoTracking, 'solicitudes')}
+                        >
+                          Solicitudes ({solicitudesEnvio.length})
+                          {tienePagoPendiente && <span className="tab-alert-dot" title="Pago pendiente" />}
+                        </button>
+                        <button
+                          type="button"
+                          className={`shipment-tab-btn ${tabActiva === 'historial' ? 'active' : ''}`}
+                          onClick={() => cambiarTabEnvio(envio.codigoTracking, 'historial')}
+                        >
+                          Historial ({envio.historial.length})
+                        </button>
+                      </nav>
+
+                      {/* Contenido de cada pestaña */}
+                      <div className="shipment-tab-panel">
+                        {tabActiva === 'resumen' && (
+                          <div className="tab-panel-fade">
+                            <div className="shipment-details">
+                              <p><span>Tu rol</span>{envio.rolCliente}</p>
+                              <p><span>{envio.rolCliente === 'Remitente' ? 'Destinatario' : 'Remitente'}</span>{envio.contraparte || 'No disponible'}</p>
+                              <p><span>Ruta</span>{envio.ruta || 'Por confirmar'}</p>
+                              <p><span>Detalle</span>{envio.descripcion || 'Encomienda'}</p>
+                              <p><span>Peso total</span>{envio.pesoTotal != null ? `${envio.pesoTotal} kg` : 'No registrado'}</p>
+                              <p><span>Tarifa total</span>{envio.tarifaTotal != null ? `S/ ${envio.tarifaTotal.toFixed(2)}` : 'Por calcular'}</p>
+                              <p><span>Dirección de destino</span>{envio.direccionDestinatario || 'No registrada'}</p>
+                              <p><span>Viaje</span>{envio.fechaViaje || 'Por asignar'}</p>
+                              <p><span>Bus</span>{envio.numeroBus || 'Por asignar'}</p>
+                            </div>
+                            {envio.bultos?.length > 0 && (
+                              <div className="shipment-parcels">
+                                <h3>Bultos del envío</h3>
+                                <ul>
+                                  {envio.bultos.map((bulto, index) => (
+                                    <li key={`${envio.codigoTracking}-bulto-${index}`}>
+                                      <span>{bulto.original ? 'Bulto original' : `Bulto adicional ${index}`}</span>
+                                      <strong>{bulto.descripcion || 'Sin descripción'} · {bulto.peso != null ? `${bulto.peso} kg` : 'Peso no registrado'}</strong>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {tabActiva === 'solicitudes' && (() => {
+                          const solicitudPendiente = solicitudesEnvio.some(
+                            (solicitud) => solicitud.estado === 'PENDIENTE' || solicitud.estado === 'PENDIENTE_PAGO'
+                          );
+                          const solicitudEnRevision = solicitudesEnvio.some(
+                            (solicitud) => solicitud.estado === 'PENDIENTE'
+                          );
+                          const solicitudConPagoPendiente = solicitudesEnvio.some(
+                            (solicitud) => solicitud.estado === 'PENDIENTE_PAGO'
+                          );
+                          const terminal = ['Cancelado', 'Entregado', 'Recogido']
+                            .includes(envio.estadoActual);
+                          const permiteSolicitud = ['Pendiente de Pago', 'En origen']
+                            .includes(envio.estadoActual);
+                          return (
+                            <section className="shipment-requests tab-panel-fade">
+                              <h3>Solicitudes del envío</h3>
+                              {solicitudesEnvio.length > 0 && (
+                                <ul>
+                                  {solicitudesEnvio.map((solicitud) => (
+                                    <li key={solicitud.idSolicitud}>
+                                      <strong>
+                                        {solicitud.tipo === 'CANCELACION'
+                                          ? 'Cancelación'
+                                          : solicitud.tipo === 'CAMBIO_DIRECCION' ? 'Cambio de dirección' : 'Bulto adicional'}
+                                        {' · '}{etiquetaEstadoSolicitud(solicitud.estado)}
+                                      </strong>
+                                      {solicitud.tipo === 'CAMBIO_DIRECCION' && solicitud.direccionSolicitada && (
+                                        <span> Dirección solicitada: {solicitud.direccionSolicitada}</span>
+                                      )}
+                                      {solicitud.tipo === 'AGREGAR_BULTO' && (
+                                        <span>
+                                          {' '}{solicitud.descripcionBulto || 'Bulto'} · {solicitud.pesoBulto ?? '—'} kg
+                                          {solicitud.montoAdicional != null && ` · Importe adicional: S/ ${solicitud.montoAdicional.toFixed(2)}`}
+                                        </span>
+                                      )}
+                                      {solicitud.respuesta && <p>{solicitud.respuesta}</p>}
+                                      {envio.rolCliente === 'Remitente'
+                                        && solicitud.tipo === 'AGREGAR_BULTO'
+                                        && solicitud.estado === 'PENDIENTE_PAGO' && (
+                                        <button
+                                          type="button"
+                                          disabled={pagoEnviando === solicitud.idSolicitud}
+                                          onClick={() => setPagoBultoAConfirmar(solicitud)}
+                                        >
+                                          {pagoEnviando === solicitud.idSolicitud ? 'Procesando...' : 'Pagar importe adicional'}
+                                        </button>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                              {envio.rolCliente === 'Remitente' && !terminal && permiteSolicitud && !solicitudPendiente && (
+                                <div className="shipment-request-actions">
+                                  <label>
+                                    Nueva dirección del destinatario
+                                    <input
+                                      maxLength={500}
+                                      value={direccionEdicion[envio.codigoTracking] ?? ''}
+                                      placeholder={envio.direccionDestinatario || 'Ingresa la nueva dirección'}
+                                      onChange={(e) => setDireccionEdicion(actual => ({
+                                        ...actual,
+                                        [envio.codigoTracking]: e.target.value,
+                                      }))}
+                                    />
+                                  </label>
+                                  <label>
+                                    Descripción del bulto adicional
+                                    <input
+                                      maxLength={200}
+                                      value={descripcionBultoEdicion[envio.codigoTracking] ?? ''}
+                                      placeholder="Ej. Caja con libros"
+                                      onChange={(e) => setDescripcionBultoEdicion(actual => ({
+                                        ...actual,
+                                        [envio.codigoTracking]: e.target.value,
+                                      }))}
+                                    />
+                                  </label>
+                                  <label>
+                                    Peso del bulto adicional (kg)
+                                    <input
+                                      type="number"
+                                      min="0.01"
+                                      max="1000"
+                                      step="0.01"
+                                      value={pesoBultoEdicion[envio.codigoTracking] ?? ''}
+                                      placeholder="Ej. 2.5"
+                                      onChange={(e) => setPesoBultoEdicion(actual => ({
+                                        ...actual,
+                                        [envio.codigoTracking]: e.target.value,
+                                      }))}
+                                    />
+                                  </label>
                                   <button
                                     type="button"
-                                    disabled={pagoEnviando === solicitud.idSolicitud}
-                                    onClick={() => setPagoBultoAConfirmar(solicitud)}
+                                    disabled={solicitudEnviando === envio.codigoTracking
+                                      || !(descripcionBultoEdicion[envio.codigoTracking] ?? '').trim()
+                                      || !Number.isFinite(Number(pesoBultoEdicion[envio.codigoTracking]))
+                                      || Number(pesoBultoEdicion[envio.codigoTracking]) <= 0}
+                                    onClick={() => prepararSolicitud(envio, 'AGREGAR_BULTO')}
                                   >
-                                    {pagoEnviando === solicitud.idSolicitud ? 'Procesando...' : 'Pagar importe adicional'}
+                                    Solicitar agregar bulto
                                   </button>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        {envio.rolCliente === 'Remitente' && !terminal && permiteSolicitud && !solicitudPendiente && (
-                          <div className="shipment-request-actions">
-                            <label>
-                              Nueva dirección del destinatario
-                              <input
-                                maxLength={500}
-                                value={direccionEdicion[envio.codigoTracking] ?? ''}
-                                placeholder={envio.direccionDestinatario || 'Ingresa la nueva dirección'}
-                                onChange={(e) => setDireccionEdicion(actual => ({
-                                  ...actual,
-                                  [envio.codigoTracking]: e.target.value,
-                                }))}
-                              />
-                            </label>
-                            <label>
-                              Descripción del bulto adicional
-                              <input
-                                maxLength={200}
-                                value={descripcionBultoEdicion[envio.codigoTracking] ?? ''}
-                                placeholder="Ej. Caja con libros"
-                                onChange={(e) => setDescripcionBultoEdicion(actual => ({
-                                  ...actual,
-                                  [envio.codigoTracking]: e.target.value,
-                                }))}
-                              />
-                            </label>
-                            <label>
-                              Peso del bulto adicional (kg)
-                              <input
-                                type="number"
-                                min="0.01"
-                                max="1000"
-                                step="0.01"
-                                value={pesoBultoEdicion[envio.codigoTracking] ?? ''}
-                                placeholder="Ej. 2.5"
-                                onChange={(e) => setPesoBultoEdicion(actual => ({
-                                  ...actual,
-                                  [envio.codigoTracking]: e.target.value,
-                                }))}
-                              />
-                            </label>
-                            <button
-                              type="button"
-                              disabled={solicitudEnviando === envio.codigoTracking
-                                || !(descripcionBultoEdicion[envio.codigoTracking] ?? '').trim()
-                                || !Number.isFinite(Number(pesoBultoEdicion[envio.codigoTracking]))
-                                || Number(pesoBultoEdicion[envio.codigoTracking]) <= 0}
-                              onClick={() => prepararSolicitud(envio, 'AGREGAR_BULTO')}
-                            >
-                              Solicitar agregar bulto
-                            </button>
-                            <button
-                              type="button"
-                              disabled={solicitudEnviando === envio.codigoTracking
-                                || !(direccionEdicion[envio.codigoTracking] ?? '').trim()
-                                || (direccionEdicion[envio.codigoTracking] ?? '').trim().toLowerCase()
-                                  === (envio.direccionDestinatario ?? '').trim().toLowerCase()}
-                              onClick={() => prepararSolicitud(envio, 'CAMBIO_DIRECCION')}
-                            >
-                              Solicitar cambio de dirección
-                            </button>
-                            <button
-                              type="button"
-                              className="request-cancel"
-                              disabled={solicitudEnviando === envio.codigoTracking}
-                              onClick={() => prepararSolicitud(envio, 'CANCELACION')}
-                            >
-                              Solicitar cancelación
-                            </button>
+                                  <button
+                                    type="button"
+                                    disabled={solicitudEnviando === envio.codigoTracking
+                                      || !(direccionEdicion[envio.codigoTracking] ?? '').trim()
+                                      || (direccionEdicion[envio.codigoTracking] ?? '').trim().toLowerCase()
+                                        === (envio.direccionDestinatario ?? '').trim().toLowerCase()}
+                                    onClick={() => prepararSolicitud(envio, 'CAMBIO_DIRECCION')}
+                                  >
+                                    Solicitar cambio de dirección
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="request-cancel"
+                                    disabled={solicitudEnviando === envio.codigoTracking}
+                                    onClick={() => prepararSolicitud(envio, 'CANCELACION')}
+                                  >
+                                    Solicitar cancelación
+                                  </button>
+                                </div>
+                              )}
+                              {solicitudEnRevision && <p className="request-pending-note">Hay una solicitud pendiente de revisión. Espera la respuesta del personal antes de enviar otra.</p>}
+                              {solicitudConPagoPendiente && <p className="request-pending-note">El personal aprobó el bulto adicional. Completa el pago para continuar con el despacho del envío.</p>}
+                              {envio.rolCliente !== 'Remitente' && <p className="request-pending-note">Solo el remitente puede solicitar cambios o cancelación.</p>}
+                              {terminal && <p className="request-pending-note">Este envío ya está finalizado y no admite nuevas solicitudes.</p>}
+                              {envio.rolCliente === 'Remitente' && !terminal && !permiteSolicitud && (
+                                <p className="request-pending-note">
+                                  Las solicitudes de cambio o cancelación solo están disponibles antes del despacho. Contacta con la agencia para consultar otras opciones.
+                                </p>
+                              )}
+                            </section>
+                          );
+                        })()}
+
+                        {tabActiva === 'historial' && (
+                          <div className="shipment-timeline tab-panel-fade">
+                            <h3>Historial del envío</h3>
+                            <ol>
+                              {envio.historial.map((evento, indice) => (
+                                <li key={`${envio.codigoTracking}-${evento.estado}-${evento.fecha ?? indice}`}>
+                                  <span className="timeline-dot" />
+                                  <div>
+                                    <strong>{etiquetaEstadoEncomienda(evento.estado)}</strong>
+                                    <p>{evento.detalle}</p>
+                                    {evento.ubicacion && <span>{evento.ubicacion}</span>}
+                                    {evento.fecha && <time dateTime={evento.fecha}>{formatearFecha(evento.fecha)}</time>}
+                                  </div>
+                                </li>
+                              ))}
+                            </ol>
                           </div>
                         )}
-                        {solicitudEnRevision && <p className="request-pending-note">Hay una solicitud pendiente de revisión. Espera la respuesta del personal antes de enviar otra.</p>}
-                        {solicitudConPagoPendiente && <p className="request-pending-note">El personal aprobó el bulto adicional. Completa el pago para continuar con el despacho del envío.</p>}
-                        {envio.rolCliente !== 'Remitente' && <p>Solo el remitente puede solicitar cambios o cancelación.</p>}
-                        {terminal && <p>Este envío ya está finalizado y no admite nuevas solicitudes.</p>}
-                        {envio.rolCliente === 'Remitente' && !terminal && !permiteSolicitud && (
-                          <p className="request-pending-note">
-                            Las solicitudes de cambio o cancelación solo están disponibles antes del despacho. Contacta con la agencia para consultar otras opciones.
-                          </p>
-                        )}
-                      </section>
-                    );
-                  })()}
-                  <section className="shipment-progress" aria-label={`Progreso del envío: ${envio.progreso}%`}>
-                    <div className="shipment-progress-heading">
-                      <h3>Progreso del envío</h3>
-                      <strong>{envio.progreso}%</strong>
-                    </div>
-                    <div className="progress-track">
-                      <div className="progress-track-fill" style={{ width: `${envio.progreso}%` }} />
-                      <span className="progress-truck" style={{ left: `${envio.progreso}%` }} aria-hidden="true">🚚</span>
-                      <div className="progress-stops">
-                        {[
-                          'Registrado',
-                          'En origen',
-                          'En tránsito',
-                          'Llegó a agencia destino',
-                          envio.estadoActual === 'Disponible para recojo'
-                            ? 'Disponible para recojo'
-                            : envio.estadoActual === 'En reparto'
-                              ? 'En reparto'
-                              : 'Recojo / reparto',
-                          envio.estadoActual === 'Recogido'
-                            ? 'Recogido'
-                            : envio.estadoActual === 'Entregado'
-                              ? 'Entregado'
-                              : 'Entrega / recojo',
-                        ].map((hito, indice) => (
-                          <span
-                            className={envio.progreso >= [0, 20, 40, 60, 80, 100][indice] ? 'progress-stop active' : 'progress-stop'}
-                            style={{
-                              left: `${[0, 20, 40, 60, 80, 100][indice]}%`,
-                              transform: indice === 0 ? 'none' : indice === 5 ? 'translateX(-100%)' : 'translateX(-50%)',
-                            }}
-                            key={hito}
-                          >
-                            <i />
-                            <small>{hito}</small>
-                          </span>
-                        ))}
                       </div>
-                    </div>
-                  </section>
-                  <div className={envio.estimacionVencida ? 'shipment-eta shipment-eta-late' : 'shipment-eta'}>
-                    <span className="eta-icon" aria-hidden="true">◷</span>
-                    <div>
-                      <strong>
-                        {envio.fechaEstimadaLlegada
-                          ? `Llegada estimada: ${formatearFechaSimple(envio.fechaEstimadaLlegada)}`
-                          : 'Fecha estimada pendiente'}
-                      </strong>
-                      <p>
-                        {envio.estimacionVencida
-                          ? 'La fecha estimada ya pasó. El estado real no cambia hasta que el personal registre el siguiente hito.'
-                          : envio.fechaEstimadaLlegada
-                            ? 'Fecha referencial calculada con el plazo configurado para la ruta; puede variar.'
-                            : 'Se calculará cuando la encomienda tenga un viaje programado.'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="shipment-timeline">
-                    <h3>Historial del envío</h3>
-                    <ol>
-                      {envio.historial.map((evento, indice) => (
-                        <li key={`${envio.codigoTracking}-${evento.estado}-${evento.fecha ?? indice}`}>
-                          <span className="timeline-dot" />
-                          <div>
-                            <strong>{etiquetaEstadoEncomienda(evento.estado)}</strong>
-                            <p>{evento.detalle}</p>
-                            {evento.ubicacion && <span>{evento.ubicacion}</span>}
-                            {evento.fecha && <time dateTime={evento.fecha}>{formatearFecha(evento.fecha)}</time>}
-                          </div>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </>
       ) : (
         <section className="portal-auth">
           <div className="portal-auth-intro">
