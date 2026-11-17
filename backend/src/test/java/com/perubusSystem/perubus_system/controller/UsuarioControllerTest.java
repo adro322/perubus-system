@@ -49,6 +49,20 @@ class UsuarioControllerTest {
     }
 
     @Test
+    void tras5FallosElLoginDelPersonalQuedaLimitado() {
+        when(repo.findByUsernameAndPassword(any(), any())).thenReturn(Optional.empty());
+        Usuario credenciales = new Usuario();
+        credenciales.setUsername("Admin.Perubus");
+        credenciales.setPassword("incorrecta");
+
+        for (int i = 0; i < 5; i++) {
+            assertThat(controller.autenticarUsuario(credenciales, request).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        }
+
+        assertThat(controller.autenticarUsuario(credenciales, request).getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    @Test
     void sinSesionNoSePuedeRegistrarPersonal() {
         when(repo.count()).thenReturn(3L);
         when(sesion.actual(any())).thenReturn(Optional.empty());

@@ -18,6 +18,8 @@ export type Accion =
   | 'pagar'
   | 'notificaciones'       // solicitudes de clientes
   | 'registrar_cliente'
+  | 'gestionar_acceso_portal' // generar acceso o restablecer la clave de un cliente
+  | 'bloquear_cuentas'        // bloquear cuentas del portal: solo ADMIN y SUPERVISOR
   | 'ver_historial'
   | 'actualizar_estado'    // RF-06
   | 'ver_manifiestos'
@@ -32,6 +34,8 @@ const PERMISOS: Record<Accion, Rol[]> = {
   pagar: ['AGENTE'],
   notificaciones: ['AGENTE'],
   registrar_cliente: ['AGENTE'],
+  gestionar_acceso_portal: ['AGENTE'],
+  bloquear_cuentas: [],
   ver_historial: ['AGENTE', 'OPERARIO'],
   actualizar_estado: ['OPERARIO'],
   ver_manifiestos: ['OPERARIO'],
@@ -53,6 +57,7 @@ const VISTAS: [string, Accion][] = [
   ['lista_encomiendas', 'ver_historial'],
   ['notificaciones', 'notificaciones'],
   ['registro_cliente', 'registrar_cliente'],
+  ['accesos_portal', 'gestionar_acceso_portal'],
   ['lista_clientes', 'gestionar_clientes'],
   ['lista_manifiestos', 'ver_manifiestos'],
   ['personal', 'gestionar_personal'],

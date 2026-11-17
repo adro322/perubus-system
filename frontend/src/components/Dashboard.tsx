@@ -16,7 +16,7 @@ export default function Dashboard() {
 
   // Estados Cliente
   const [clienteForm, setClienteForm] = useState({ numDocumento: '', nombres: '', apellidos: '', telefono: '', correo: '' });
-  const [listaClientes, setListaClientes] = useState([]);
+  const [listaClientes, setListaClientes] = useState<any[]>([]);
   
   // Estados Encomienda
   const [dniBuscado, setDniBuscado] = useState('');
@@ -44,6 +44,12 @@ export default function Dashboard() {
   const [personalForm, setPersonalForm] = useState({ username: '', password: '', rol: 'AGENTE' });
   const [personalEditando, setPersonalEditando] = useState<number | null>(null);
   const [clienteEditando, setClienteEditando] = useState<any>(null);
+  const [crearAccesoAlRegistrar, setCrearAccesoAlRegistrar] = useState(true);
+  const [docAcceso, setDocAcceso] = useState('');
+  const [clienteAcceso, setClienteAcceso] = useState<any>(null);
+  const [errorAcceso, setErrorAcceso] = useState('');
+  const [credenciales, setCredenciales] = useState<any>(null);
+  const [accesoProcesando, setAccesoProcesando] = useState(false);
   const [manifiestoEditando, setManifiestoEditando] = useState<number | null>(null);
   const [confirmarEdicionManifiesto, setConfirmarEdicionManifiesto] = useState(false);
   const [manifiestoAEliminar, setManifiestoAEliminar] = useState<any>(null);
@@ -163,6 +169,52 @@ export default function Dashboard() {
       cargarClientes();
     } catch (error: any) {
       alert(mensajeDeError(error, 'No se pudo actualizar el cliente'));
+    }
+  };
+
+  // ----- Cuentas del portal de clientes -----
+  const actualizarCuentaLocal = (idCliente: number, estado: string) => {
+    setListaClientes(actual => actual.map(c => c.idCliente === idCliente ? { ...c, cuentaPortal: estado } : c));
+    setClienteAcceso((actual: any) => actual && actual.idCliente === idCliente ? { ...actual, cuentaPortal: estado } : actual);
+  };
+
+  const generarAccesoPortal = async (c: any) => {
+    const restablece = c.cuentaPortal && c.cuentaPortal !== 'SIN_CUENTA';
+    if (restablece && !window.confirm(`¿Restablecer la clave de ${c.nombres}? La clave actual dejará de funcionar.`)) return;
+    setAccesoProcesando(true);
+    try {
+      const res = await axios.post(`http://localhost:8080/api/clientes/${c.idCliente}/acceso`);
+      setCredenciales(res.data);
+      actualizarCuentaLocal(c.idCliente, 'CLAVE_TEMPORAL');
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo generar el acceso'));
+    } finally {
+      setAccesoProcesando(false);
+    }
+  };
+
+  const cambiarBloqueoCuenta = async (c: any, bloqueado: boolean) => {
+    if (bloqueado && !window.confirm(`¿Bloquear la cuenta del portal de ${c.nombres}? No podrá ingresar hasta que se desbloquee.`)) return;
+    try {
+      const res = await axios.put(`http://localhost:8080/api/clientes/${c.idCliente}/bloqueo`, { bloqueado });
+      actualizarCuentaLocal(c.idCliente, res.data.cuentaPortal);
+      mostrarMensaje(bloqueado ? 'Cuenta bloqueada' : 'Cuenta desbloqueada');
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo cambiar el bloqueo'));
+    }
+  };
+
+  const buscarClienteAcceso = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorAcceso('');
+    setClienteAcceso(null);
+    try {
+      const res = await axios.get(`http://localhost:8080/api/clientes/buscar/${docAcceso}`);
+      setClienteAcceso(res.data);
+    } catch (error: any) {
+      setErrorAcceso(error.response?.status === 404
+        ? 'No hay un cliente registrado con ese documento. Regístralo primero en "Nuevo Cliente".'
+        : 'Ingresa un DNI (8 dígitos) o un RUC (11 dígitos).');
     }
   };
 
@@ -584,10 +636,22 @@ export default function Dashboard() {
   const registrarCliente = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:8080/api/clientes/registrar', clienteForm);
-      mostrarMensaje('Cliente registrado exitosamente');
+      const res = await axios.post('http://localhost:8080/api/clientes/registrar', clienteForm);
       setClienteForm({ numDocumento: '', nombres: '', apellidos: '', telefono: '', correo: '' });
-    } catch (error) { alert("Error al guardar cliente"); }
+      if (!crearAccesoAlRegistrar) {
+        mostrarMensaje('Cliente registrado exitosamente');
+        return;
+      }
+      try {
+        const acceso = await axios.post(`http://localhost:8080/api/clientes/${res.data.idCliente}/acceso`);
+        setCredenciales(acceso.data);
+        mostrarMensaje('Cliente registrado y acceso al portal generado');
+      } catch (error: any) {
+        mostrarMensaje('Cliente registrado, pero no se pudo generar el acceso. Hazlo desde "Accesos al portal".');
+      }
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'Error al guardar cliente'));
+    }
   };
 
   const calcularTarifa = async () => {
@@ -685,6 +749,7 @@ export default function Dashboard() {
           
           {(puede(rol, 'registrar_cliente') || puede(rol, 'gestionar_clientes')) && <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Directorio</div>}
           {puede(rol, 'registrar_cliente') && <button onClick={() => setVistaActual('registro_cliente')} style={obtenerEstiloMenu(vistaActual === 'registro_cliente')}>Nuevo Cliente</button>}
+          {puede(rol, 'gestionar_acceso_portal') && <button onClick={() => setVistaActual('accesos_portal')} style={obtenerEstiloMenu(vistaActual === 'accesos_portal')}>Accesos al portal</button>}
           {puede(rol, 'gestionar_clientes') && <button onClick={() => setVistaActual('lista_clientes')} style={obtenerEstiloMenu(vistaActual === 'lista_clientes')}>Cartera de Clientes</button>}
 
           {puede(rol, 'ver_manifiestos') && <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Logística</div>}
@@ -883,9 +948,13 @@ export default function Dashboard() {
               </div>
               <div><label style={labelStyle}>Teléfono Móvil</label><input type="text" maxLength={9} required value={clienteForm.telefono} onChange={e => setClienteForm({...clienteForm, telefono: e.target.value})} style={inputStyle} /></div>
               <div><label style={labelStyle}>Nombres</label><input type="text" required value={clienteForm.nombres} onChange={e => setClienteForm({...clienteForm, nombres: e.target.value})} style={inputStyle} /></div>
-              <div><label style={labelStyle}>Apellidos</label><input type="text" required value={clienteForm.apellidos} onChange={e => setClienteForm({...clienteForm, apellidos: e.target.value})} style={inputStyle} /></div>
+              <div><label style={labelStyle}>Apellidos</label><input type="text" required={clienteForm.numDocumento.length === 8} value={clienteForm.apellidos} onChange={e => setClienteForm({...clienteForm, apellidos: e.target.value})} style={inputStyle} /></div>
               <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>Correo Electrónico</label><input type="email" value={clienteForm.correo} onChange={e => setClienteForm({...clienteForm, correo: e.target.value})} style={inputStyle} /></div>
               
+              <label style={{ gridColumn: 'span 2', display: 'flex', gap: '10px', alignItems: 'center', fontSize: '14px', color: '#3F4254' }}>
+                <input type="checkbox" checked={crearAccesoAlRegistrar} onChange={e => setCrearAccesoAlRegistrar(e.target.checked)} />
+                Crear acceso al portal del cliente (se genera una clave temporal para entregársela)
+              </label>
               <button type="submit" style={{ ...btnPrimary, gridColumn: 'span 2' }}>Registrar Cliente</button>
             </form>
           )}
@@ -910,7 +979,7 @@ export default function Dashboard() {
                 </form>
               )}
               <table style={tableStyle}>
-                <thead><tr><th style={thStyle}>Documento</th><th style={thStyle}>Cliente</th><th style={thStyle}>Teléfono</th><th style={thStyle}>Correo</th><th style={thStyle}>Acciones</th></tr></thead>
+                <thead><tr><th style={thStyle}>Documento</th><th style={thStyle}>Cliente</th><th style={thStyle}>Teléfono</th><th style={thStyle}>Correo</th><th style={thStyle}>Cuenta del portal</th><th style={thStyle}>Acciones</th></tr></thead>
                 <tbody>
                   {listaClientes.map((c: any) => (
                     <tr key={c.idCliente} style={trStyle}>
@@ -918,16 +987,64 @@ export default function Dashboard() {
                       <td style={tdStyle}>{c.nombres} {c.apellidos}</td>
                       <td style={tdStyle}>{c.telefono}</td>
                       <td style={tdStyle}>{c.correo}</td>
+                      <td style={tdStyle}>{badgeCuenta(c.cuentaPortal)}</td>
                       <td style={tdStyle}>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                           <button type="button" onClick={() => setClienteEditando({ ...c })} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Editar</button>
                           <button type="button" onClick={() => void eliminarCliente(c)} style={{ padding: '6px 12px', backgroundColor: '#FDECEC', color: '#B42318', border: '1px solid #F5C2C0', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Eliminar</button>
+                          <button type="button" disabled={accesoProcesando || c.cuentaPortal === 'BLOQUEADA'} onClick={() => void generarAccesoPortal(c)} style={btnMini}>{c.cuentaPortal === 'SIN_CUENTA' ? 'Generar acceso' : 'Restablecer clave'}</button>
+                          {c.cuentaPortal !== 'SIN_CUENTA' && (
+                            <button type="button" onClick={() => void cambiarBloqueoCuenta(c, c.cuentaPortal !== 'BLOQUEADA')} style={btnMini}>{c.cuentaPortal === 'BLOQUEADA' ? 'Desbloquear' : 'Bloquear'}</button>
+                          )}
                         </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {vistaActual === 'accesos_portal' && (
+            <div>
+              <h2 style={{ color: '#1E1E2D', marginBottom: '8px', fontSize: '24px' }}>Accesos al portal de clientes</h2>
+              <p style={{ color: '#6B7280', marginTop: 0, marginBottom: '20px' }}>
+                Busca al cliente por su documento para generar su acceso o restablecer su clave. Entrégale la clave temporal en persona: no se vuelve a mostrar.
+              </p>
+              <form onSubmit={buscarClienteAcceso} style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+                <input value={docAcceso} onChange={e => setDocAcceso(e.target.value.replace(/\D/g, ''))} maxLength={11} placeholder="DNI o RUC del cliente" required style={{ ...inputStyle, flex: 1 }} />
+                <button type="submit" style={btnSecondary}>Buscar</button>
+              </form>
+              {errorAcceso && (
+                <div style={{ padding: '12px', backgroundColor: '#ffebee', color: '#c62828', borderRadius: '6px', marginBottom: '20px' }}>{errorAcceso}</div>
+              )}
+              {clienteAcceso && (
+                <div style={{ border: '1px solid #E4E6EF', borderRadius: '8px', padding: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, color: '#1E1E2D', fontSize: '18px' }}>{clienteAcceso.nombres} {clienteAcceso.apellidos}</div>
+                      <div style={{ color: '#6B7280', fontSize: '14px' }}>{clienteAcceso.tipoDocumento} {clienteAcceso.numDocumento} · {clienteAcceso.telefono || 'sin teléfono'} · {clienteAcceso.correo || 'sin correo'}</div>
+                    </div>
+                    {badgeCuenta(clienteAcceso.cuentaPortal)}
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap' }}>
+                    <button type="button" disabled={accesoProcesando || clienteAcceso.cuentaPortal === 'BLOQUEADA'} onClick={() => void generarAccesoPortal(clienteAcceso)} style={{ ...btnPrimary, padding: '10px 16px', fontSize: '14px' }}>
+                      {clienteAcceso.cuentaPortal === 'SIN_CUENTA' ? 'Generar acceso' : 'Restablecer clave'}
+                    </button>
+                    {puede(rol, 'bloquear_cuentas') && clienteAcceso.cuentaPortal !== 'SIN_CUENTA' && (
+                      <button type="button" onClick={() => void cambiarBloqueoCuenta(clienteAcceso, clienteAcceso.cuentaPortal !== 'BLOQUEADA')} style={{ ...btnLight, padding: '10px 16px', fontSize: '14px' }}>
+                        {clienteAcceso.cuentaPortal === 'BLOQUEADA' ? 'Desbloquear cuenta' : 'Bloquear cuenta'}
+                      </button>
+                    )}
+                  </div>
+                  {clienteAcceso.cuentaPortal === 'BLOQUEADA' && (
+                    <p style={{ fontSize: '13px', color: '#B42318', marginBottom: 0 }}>La cuenta está bloqueada. Solo un administrador o supervisor puede desbloquearla.</p>
+                  )}
+                  {clienteAcceso.cuentaPortal === 'CLAVE_TEMPORAL' && (
+                    <p style={{ fontSize: '13px', color: '#B26A00', marginBottom: 0 }}>El cliente aún no cambió su clave temporal.</p>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -1313,6 +1430,25 @@ export default function Dashboard() {
         </div>
       </div>
     </div>
+    {credenciales && (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}>
+        <section role="dialog" aria-modal="true" style={{ width: '100%', maxWidth: '460px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}>
+          <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>{credenciales.accion === 'RESTABLECIDO' ? 'Clave restablecida' : 'Acceso al portal generado'}</h2>
+          <p style={{ margin: '6px 0 16px', color: '#777' }}>{credenciales.nombre}</p>
+          <div style={{ background: '#F8F9FA', border: '1px dashed #D32F2F', borderRadius: '8px', padding: '16px', display: 'grid', gap: '12px' }}>
+            <div><span style={{ color: '#888', fontSize: '12px' }}>Usuario (documento)</span><br /><strong style={{ fontSize: '18px' }}>{credenciales.numDocumento}</strong></div>
+            <div><span style={{ color: '#888', fontSize: '12px' }}>Clave temporal</span><br /><strong style={{ fontSize: '22px', letterSpacing: '2px', fontFamily: 'monospace' }}>{credenciales.passwordTemporal}</strong></div>
+          </div>
+          <p style={{ fontSize: '12px', color: '#B26A00', lineHeight: 1.5 }}>
+            Entrégala al cliente en persona. No se volverá a mostrar y deberá cambiarla en su primer ingreso al portal.
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+            <button type="button" onClick={() => void navigator.clipboard?.writeText(`Usuario: ${credenciales.numDocumento}\nClave temporal: ${credenciales.passwordTemporal}`)} style={btnMini}>Copiar</button>
+            <button type="button" onClick={() => setCredenciales(null)} style={{ padding: '10px 14px', backgroundColor: '#D32F2F', color: 'white', border: 0, borderRadius: '4px', fontWeight: 600, cursor: 'pointer' }}>Listo</button>
+          </div>
+        </section>
+      </div>
+    )}
     {encomiendaAAsignar && (
       <div onClick={() => !asignando && setEncomiendaAAsignar(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}>
         <section role="dialog" aria-modal="true" onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: '460px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}>
@@ -1542,6 +1678,17 @@ function etiquetaEstadoSolicitudAdmin(estado: string) {
 const obtenerEstiloMenu = (activo: boolean) => ({
   padding: '12px 15px', backgroundColor: activo ? '#2B2B40' : 'transparent', color: activo ? 'white' : '#A2A3B7', border: 'none', textAlign: 'left' as const, cursor: 'pointer', borderRadius: '6px', fontSize: '14px', transition: '0.2s', fontWeight: activo ? '600' : '400'
 });
+const ETIQUETAS_CUENTA: Record<string, { texto: string; fondo: string; color: string }> = {
+  SIN_CUENTA: { texto: 'Sin cuenta', fondo: '#F3F6F9', color: '#6B7280' },
+  CLAVE_TEMPORAL: { texto: 'Clave temporal', fondo: '#FFF4E5', color: '#B26A00' },
+  ACTIVA: { texto: 'Activa', fondo: '#E8F5E9', color: '#2E7D32' },
+  BLOQUEADA: { texto: 'Bloqueada', fondo: '#FDECEC', color: '#B42318' },
+};
+const btnMini = { padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' };
+const badgeCuenta = (estado?: string) => {
+  const e = ETIQUETAS_CUENTA[estado || 'SIN_CUENTA'] || ETIQUETAS_CUENTA.SIN_CUENTA;
+  return <span style={{ backgroundColor: e.fondo, color: e.color, padding: '4px 8px', borderRadius: '4px', fontSize: '12px', whiteSpace: 'nowrap' }}>{e.texto}</span>;
+};
 const labelStyle = { display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: '600', color: '#3F4254' };
 const inputStyle = { width: '100%', padding: '12px 15px', border: '1px solid #E4E6EF', borderRadius: '6px', boxSizing: 'border-box' as const, fontSize: '14px', backgroundColor: '#ffffff', color: '#3F4254', outline: 'none', transition: 'border-color 0.15s ease-in-out' };
 const btnPrimary = { padding: '14px', backgroundColor: '#D32F2F', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '15px', transition: 'background-color 0.3s' };
