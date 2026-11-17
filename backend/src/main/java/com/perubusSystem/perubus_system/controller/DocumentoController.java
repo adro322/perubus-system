@@ -1,5 +1,7 @@
 package com.perubusSystem.perubus_system.controller;
 
+import com.perubusSystem.perubus_system.seguridad.RequiereRol;
+import com.perubusSystem.perubus_system.seguridad.Rol;
 import com.perubusSystem.perubus_system.service.DocumentoService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -11,13 +13,14 @@ import java.util.NoSuchElementException;
 
 @RestController
 @RequestMapping("/api/documentos")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "${app.frontend-origin}", allowCredentials = "true")
 public class DocumentoController {
 
     @Autowired
     private DocumentoService documentoService;
 
     // 8 dígitos = DNI, 11 dígitos = RUC
+    @RequiereRol(Rol.AGENTE)
     @GetMapping("/{numero}")
     public ResponseEntity<?> consultar(@PathVariable String numero) {
         try {

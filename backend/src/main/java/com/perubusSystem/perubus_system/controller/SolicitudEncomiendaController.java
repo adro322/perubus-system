@@ -1,5 +1,7 @@
 package com.perubusSystem.perubus_system.controller;
 
+import com.perubusSystem.perubus_system.seguridad.RequiereRol;
+import com.perubusSystem.perubus_system.seguridad.Rol;
 import com.perubusSystem.perubus_system.dto.DecisionSolicitudEncomienda;
 import com.perubusSystem.perubus_system.dto.SolicitudEncomiendaSolicitud;
 import com.perubusSystem.perubus_system.service.SolicitudEncomiendaService;
@@ -68,6 +70,7 @@ public class SolicitudEncomiendaController {
         }
     }
 
+    @RequiereRol(Rol.AGENTE)
     @GetMapping("/api/encomiendas/solicitudes-pendientes")
     public ResponseEntity<?> solicitudesPendientes(HttpSession session) {
         Object usuarioId = session.getAttribute("idUsuario");
@@ -83,6 +86,7 @@ public class SolicitudEncomiendaController {
         }
     }
 
+    @RequiereRol(Rol.AGENTE)
     @PostMapping("/api/encomiendas/solicitudes/{id}/resolver")
     public ResponseEntity<?> resolverSolicitud(
             @PathVariable Long id,

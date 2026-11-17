@@ -157,10 +157,16 @@ export default function RegisterAdmin() {
                 onChange={(e) => setRol(e.target.value)}
               >
                 <option value="ADMIN">
-                  Administrador General
+                  Administrador
+                </option>
+                <option value="SUPERVISOR">
+                  Supervisor logístico
                 </option>
                 <option value="AGENTE">
-                  Agente de Recepción
+                  Agente de carga (ventanilla)
+                </option>
+                <option value="OPERARIO">
+                  Operario de almacén
                 </option>
               </select>
             </div>

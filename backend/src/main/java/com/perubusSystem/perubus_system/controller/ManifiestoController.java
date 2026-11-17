@@ -1,5 +1,7 @@
 package com.perubusSystem.perubus_system.controller;
 
+import com.perubusSystem.perubus_system.seguridad.RequiereRol;
+import com.perubusSystem.perubus_system.seguridad.Rol;
 import com.perubusSystem.perubus_system.dto.ManifiestoSolicitud;
 import com.perubusSystem.perubus_system.service.ManifiestoService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,12 +15,13 @@ import java.util.NoSuchElementException;
 
 @RestController
 @RequestMapping("/api/manifiestos")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "${app.frontend-origin}", allowCredentials = "true")
 public class ManifiestoController {
 
     @Autowired
     private ManifiestoService manifiestoService;
 
+    @RequiereRol({})
     @PostMapping
     public ResponseEntity<?> crear(@RequestBody ManifiestoSolicitud datos) {
         try {
@@ -29,6 +32,7 @@ public class ManifiestoController {
         }
     }
 
+    @RequiereRol({})
     @PutMapping("/{id}")
     public ResponseEntity<?> actualizar(@PathVariable Long id, @RequestBody ManifiestoSolicitud datos) {
         try {
@@ -42,6 +46,7 @@ public class ManifiestoController {
         }
     }
 
+    @RequiereRol({})
     @DeleteMapping("/{id}")
     public ResponseEntity<?> eliminar(@PathVariable Long id) {
         try {
@@ -54,11 +59,13 @@ public class ManifiestoController {
         }
     }
 
+    @RequiereRol(Rol.OPERARIO)
     @GetMapping
     public ResponseEntity<?> listar() {
         return ResponseEntity.ok(manifiestoService.listar());
     }
 
+    @RequiereRol(Rol.OPERARIO)
     @GetMapping("/{id}")
     public ResponseEntity<?> detalle(@PathVariable Long id) {
         try {
@@ -69,6 +76,7 @@ public class ManifiestoController {
     }
 
     // Body: { "codigosTracking": ["PERU-XXXXXXXX", ...] }
+    @RequiereRol(Rol.OPERARIO)
     @PostMapping("/{id}/encomiendas")
     public ResponseEntity<?> asignar(@PathVariable Long id, @RequestBody Map<String, List<String>> cuerpo) {
         try {

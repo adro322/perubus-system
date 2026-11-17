@@ -28,6 +28,7 @@ export default function Login() {
         'idUsuario',
         String(res.data.idUsuario)
       );
+      sessionStorage.setItem('rol', String(res.data.rol || '').toUpperCase());
 
       navigate('/dashboard');
     } catch {

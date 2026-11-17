@@ -4,11 +4,13 @@ import axios from 'axios';
 import './Dashboard.css';
 import { etiquetaEstadoEncomienda } from './estadoEncomienda';
 import ConfirmacionModal from './ConfirmacionModal';
+import { puede, vistaInicial, vistaPermitida, ROLES, ETIQUETAS_ROL } from './permisos';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [usuarioId] = useState(() => Number(sessionStorage.getItem('idUsuario')));
-  const [vistaActual, setVistaActual] = useState('registro_encomienda'); 
+  const [rol] = useState(() => (sessionStorage.getItem('rol') || '').toUpperCase());
+  const [vistaActual, setVistaActual] = useState(() => vistaInicial((sessionStorage.getItem('rol') || '').toUpperCase()));
   const [pestanaNotificaciones, setPestanaNotificaciones] = useState<'solicitudes' | 'bultos'>('solicitudes');
   const [mensaje, setMensaje] = useState('');
 
@@ -38,6 +40,10 @@ export default function Dashboard() {
   const [listaManifiestos, setListaManifiestos] = useState<any[]>([]);
   const [solicitudesPendientes, setSolicitudesPendientes] = useState<any[]>([]);
   const [manifiestoForm, setManifiestoForm] = useState({ numBus: '', ruta: '', fechaViaje: '', capacidadKg: '' });
+  const [listaPersonal, setListaPersonal] = useState<any[]>([]);
+  const [personalForm, setPersonalForm] = useState({ username: '', password: '', rol: 'AGENTE' });
+  const [personalEditando, setPersonalEditando] = useState<number | null>(null);
+  const [clienteEditando, setClienteEditando] = useState<any>(null);
   const [manifiestoEditando, setManifiestoEditando] = useState<number | null>(null);
   const [confirmarEdicionManifiesto, setConfirmarEdicionManifiesto] = useState(false);
   const [manifiestoAEliminar, setManifiestoAEliminar] = useState<any>(null);
@@ -51,6 +57,17 @@ export default function Dashboard() {
   const [encomiendaImprimir, setEncomiendaImprimir] = useState<any>(null);
 
   useEffect(() => {
+    if (!usuarioId || !rol) {
+      navigate('/');
+      return;
+    }
+    if (!vistaPermitida(rol, vistaActual)) {
+      setVistaActual(vistaInicial(rol));
+    }
+  }, [rol, usuarioId, vistaActual, navigate]);
+
+  useEffect(() => {
+    if (vistaActual === 'personal') cargarPersonal();
     if (vistaActual === 'lista_clientes') cargarClientes();
     if (vistaActual === 'lista_encomiendas') {
       cargarEncomiendas();
@@ -63,6 +80,102 @@ export default function Dashboard() {
       cargarEncomiendas();
     }
   }, [vistaActual]);
+
+  const cerrarSesion = async () => {
+    try {
+      await axios.post('http://localhost:8080/api/usuarios/salir');
+    } catch (error) { /* si falla igual se cierra la sesión local */ }
+    sessionStorage.removeItem('idUsuario');
+    sessionStorage.removeItem('rol');
+    navigate('/');
+  };
+
+  const mensajeDeError = (error: any, porDefecto: string) =>
+    error?.response?.data?.mensaje || porDefecto;
+
+  // ----- Personal (solo ADMIN / SUPERVISOR) -----
+  const cargarPersonal = async () => {
+    try {
+      const res = await axios.get('http://localhost:8080/api/usuarios');
+      setListaPersonal(res.data);
+    } catch (error) { console.error('Error al cargar el personal'); }
+  };
+
+  const guardarPersonal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (personalEditando === null) {
+        await axios.post('http://localhost:8080/api/usuarios/registrar', personalForm);
+        mostrarMensaje('Empleado registrado exitosamente');
+      } else {
+        await axios.put(`http://localhost:8080/api/usuarios/${personalEditando}`, {
+          username: personalForm.username,
+          rol: personalForm.rol
+        });
+        mostrarMensaje('Empleado actualizado');
+      }
+      setPersonalForm({ username: '', password: '', rol: 'AGENTE' });
+      setPersonalEditando(null);
+      cargarPersonal();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo guardar al empleado'));
+    }
+  };
+
+  const editarPersonal = (u: any) => {
+    setPersonalEditando(u.idUsuario);
+    setPersonalForm({ username: u.username, password: '', rol: u.rol });
+  };
+
+  const cambiarEstadoPersonal = async (u: any) => {
+    try {
+      await axios.put(`http://localhost:8080/api/usuarios/${u.idUsuario}`, { estado: !u.estado });
+      cargarPersonal();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo cambiar el estado'));
+    }
+  };
+
+  const eliminarPersonal = async (u: any) => {
+    if (!window.confirm(`¿Eliminar al empleado ${u.username}? Esta acción no se puede deshacer.`)) return;
+    try {
+      await axios.delete(`http://localhost:8080/api/usuarios/${u.idUsuario}`);
+      mostrarMensaje('Empleado eliminado');
+      cargarPersonal();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo eliminar al empleado'));
+    }
+  };
+
+  // ----- Edición y baja de clientes (solo ADMIN / SUPERVISOR) -----
+  const guardarCliente = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clienteEditando) return;
+    try {
+      await axios.put(`http://localhost:8080/api/clientes/${clienteEditando.idCliente}`, {
+        nombres: clienteEditando.nombres,
+        apellidos: clienteEditando.apellidos,
+        telefono: clienteEditando.telefono,
+        correo: clienteEditando.correo
+      });
+      mostrarMensaje('Cliente actualizado');
+      setClienteEditando(null);
+      cargarClientes();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo actualizar el cliente'));
+    }
+  };
+
+  const eliminarCliente = async (c: any) => {
+    if (!window.confirm(`¿Eliminar al cliente ${c.nombres} ${c.apellidos || ''}? Esta acción no se puede deshacer.`)) return;
+    try {
+      await axios.delete(`http://localhost:8080/api/clientes/${c.idCliente}`);
+      mostrarMensaje('Cliente eliminado');
+      cargarClientes();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo eliminar el cliente'));
+    }
+  };
 
   const cargarClientes = async () => {
     try {
@@ -544,8 +657,9 @@ export default function Dashboard() {
 
         <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', color: '#666' }}>Recepción</div>
-          <button onClick={() => setVistaActual('registro_encomienda')} style={obtenerEstiloMenu(vistaActual === 'registro_encomienda')}>Nueva Encomienda</button>
+          {puede(rol, 'registrar_encomienda') && <button onClick={() => setVistaActual('registro_encomienda')} style={obtenerEstiloMenu(vistaActual === 'registro_encomienda')}>Nueva Encomienda</button>}
           <button onClick={() => setVistaActual('lista_encomiendas')} style={obtenerEstiloMenu(vistaActual === 'lista_encomiendas')}>Historial Encomiendas</button>
+          {puede(rol, 'notificaciones') && (
           <button
             type="button"
             aria-label={`Notificaciones${notificacionesPendientes > 0 ? `, ${notificacionesPendientes} pendientes` : ''}`}
@@ -567,16 +681,25 @@ export default function Dashboard() {
               <span className="notification-badge">{notificacionesPendientes}</span>
             )}
           </button>
+          )}
           
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Directorio</div>
-          <button onClick={() => setVistaActual('registro_cliente')} style={obtenerEstiloMenu(vistaActual === 'registro_cliente')}>Nuevo Cliente</button>
-          <button onClick={() => setVistaActual('lista_clientes')} style={obtenerEstiloMenu(vistaActual === 'lista_clientes')}>Cartera de Clientes</button>
+          {(puede(rol, 'registrar_cliente') || puede(rol, 'gestionar_clientes')) && <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Directorio</div>}
+          {puede(rol, 'registrar_cliente') && <button onClick={() => setVistaActual('registro_cliente')} style={obtenerEstiloMenu(vistaActual === 'registro_cliente')}>Nuevo Cliente</button>}
+          {puede(rol, 'gestionar_clientes') && <button onClick={() => setVistaActual('lista_clientes')} style={obtenerEstiloMenu(vistaActual === 'lista_clientes')}>Cartera de Clientes</button>}
 
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Logística</div>
-          <button onClick={() => setVistaActual('lista_manifiestos')} style={obtenerEstiloMenu(vistaActual === 'lista_manifiestos')}>Manifiestos de Carga</button>
+          {puede(rol, 'ver_manifiestos') && <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Logística</div>}
+          {puede(rol, 'ver_manifiestos') && <button onClick={() => setVistaActual('lista_manifiestos')} style={obtenerEstiloMenu(vistaActual === 'lista_manifiestos')}>Manifiestos de Carga</button>}
+
+          {puede(rol, 'gestionar_personal') && (
+            <>
+              <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Administración</div>
+              <button onClick={() => setVistaActual('personal')} style={obtenerEstiloMenu(vistaActual === 'personal')}>Personal</button>
+            </>
+          )}
         </div>
 
-        <button onClick={() => { sessionStorage.removeItem('idUsuario'); navigate('/'); }} style={{ padding: '20px', backgroundColor: '#1a1a27', color: '#ff4d4d', border: 'none', cursor: 'pointer', borderTop: '1px solid #2B2B40', textAlign: 'left', fontWeight: 'bold' }}>
+        <div style={{ padding: '0 20px 12px', fontSize: '12px', color: '#8F90A6' }}>Sesión: <strong style={{ color: '#fff' }}>{(ETIQUETAS_ROL as Record<string, string>)[rol] || rol}</strong></div>
+        <button onClick={() => void cerrarSesion()} style={{ padding: '20px', backgroundColor: '#1a1a27', color: '#ff4d4d', border: 'none', cursor: 'pointer', borderTop: '1px solid #2B2B40', textAlign: 'left', fontWeight: 'bold' }}>
           Cerrar Sesión
         </button>
       </div>
@@ -773,8 +896,21 @@ export default function Dashboard() {
           {vistaActual === 'lista_clientes' && (
             <div>
               <h2 style={{ color: '#1E1E2D', marginBottom: '20px', fontSize: '24px' }}>Directorio de Clientes</h2>
+              {clienteEditando && (
+                <form onSubmit={guardarCliente} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px', alignItems: 'end', marginBottom: '25px', padding: '20px', border: '1px solid #D32F2F', borderRadius: '8px' }}>
+                  <div style={{ gridColumn: '1 / -1', fontWeight: 600, color: '#1E1E2D' }}>Editando cliente {clienteEditando.numDocumento}</div>
+                  <div><label style={labelStyle}>Nombres / Razón social</label><input required value={clienteEditando.nombres || ''} onChange={e => setClienteEditando({ ...clienteEditando, nombres: e.target.value })} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>Apellidos</label><input value={clienteEditando.apellidos || ''} onChange={e => setClienteEditando({ ...clienteEditando, apellidos: e.target.value })} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>Teléfono</label><input maxLength={9} value={clienteEditando.telefono || ''} onChange={e => setClienteEditando({ ...clienteEditando, telefono: e.target.value.replace(/\D/g, '') })} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>Correo</label><input type="email" value={clienteEditando.correo || ''} onChange={e => setClienteEditando({ ...clienteEditando, correo: e.target.value })} style={inputStyle} /></div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="submit" style={btnPrimary}>Guardar</button>
+                    <button type="button" onClick={() => setClienteEditando(null)} style={btnLight}>Cancelar</button>
+                  </div>
+                </form>
+              )}
               <table style={tableStyle}>
-                <thead><tr><th style={thStyle}>Documento</th><th style={thStyle}>Cliente</th><th style={thStyle}>Teléfono</th><th style={thStyle}>Correo</th></tr></thead>
+                <thead><tr><th style={thStyle}>Documento</th><th style={thStyle}>Cliente</th><th style={thStyle}>Teléfono</th><th style={thStyle}>Correo</th><th style={thStyle}>Acciones</th></tr></thead>
                 <tbody>
                   {listaClientes.map((c: any) => (
                     <tr key={c.idCliente} style={trStyle}>
@@ -782,6 +918,59 @@ export default function Dashboard() {
                       <td style={tdStyle}>{c.nombres} {c.apellidos}</td>
                       <td style={tdStyle}>{c.telefono}</td>
                       <td style={tdStyle}>{c.correo}</td>
+                      <td style={tdStyle}>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <button type="button" onClick={() => setClienteEditando({ ...c })} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Editar</button>
+                          <button type="button" onClick={() => void eliminarCliente(c)} style={{ padding: '6px 12px', backgroundColor: '#FDECEC', color: '#B42318', border: '1px solid #F5C2C0', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Eliminar</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {vistaActual === 'personal' && (
+            <div>
+              <h2 style={{ color: '#1E1E2D', marginBottom: '20px', fontSize: '24px' }}>Personal</h2>
+              <form onSubmit={guardarPersonal} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px', alignItems: 'end', marginBottom: '25px' }}>
+                <div><label style={labelStyle}>Usuario</label><input required value={personalForm.username} onChange={e => setPersonalForm({ ...personalForm, username: e.target.value })} style={inputStyle} /></div>
+                {personalEditando === null && (
+                  <div><label style={labelStyle}>Contraseña</label><input required type="password" minLength={6} value={personalForm.password} onChange={e => setPersonalForm({ ...personalForm, password: e.target.value })} style={inputStyle} /></div>
+                )}
+                <div>
+                  <label style={labelStyle}>Rol</label>
+                  <select value={personalForm.rol} onChange={e => setPersonalForm({ ...personalForm, rol: e.target.value })} style={inputStyle}>
+                    {ROLES.map(r => <option key={r} value={r}>{ETIQUETAS_ROL[r]}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button type="submit" style={btnPrimary}>{personalEditando === null ? 'Registrar' : 'Guardar cambios'}</button>
+                  {personalEditando !== null && (
+                    <button type="button" onClick={() => { setPersonalEditando(null); setPersonalForm({ username: '', password: '', rol: 'AGENTE' }); }} style={btnLight}>Cancelar</button>
+                  )}
+                </div>
+              </form>
+              <table style={tableStyle}>
+                <thead><tr><th style={thStyle}>Usuario</th><th style={thStyle}>Rol</th><th style={thStyle}>Estado</th><th style={thStyle}>Acciones</th></tr></thead>
+                <tbody>
+                  {listaPersonal.map((u: any) => (
+                    <tr key={u.idUsuario} style={trStyle}>
+                      <td style={tdStyle}>{u.username}</td>
+                      <td style={tdStyle}>{(ETIQUETAS_ROL as Record<string, string>)[u.rol] || u.rol}</td>
+                      <td style={tdStyle}>
+                        <span style={{ backgroundColor: u.estado ? '#E8F5E9' : '#FDECEC', color: u.estado ? '#2E7D32' : '#B42318', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>
+                          {u.estado ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </td>
+                      <td style={tdStyle}>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <button type="button" onClick={() => editarPersonal(u)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Editar</button>
+                          <button type="button" onClick={() => void cambiarEstadoPersonal(u)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>{u.estado ? 'Desactivar' : 'Activar'}</button>
+                          <button type="button" onClick={() => void eliminarPersonal(u)} style={{ padding: '6px 12px', backgroundColor: '#FDECEC', color: '#B42318', border: '1px solid #F5C2C0', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Eliminar</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -972,12 +1161,12 @@ export default function Dashboard() {
                       </td>
                       <td style={tdStyle}>
                         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          {enc.estadoLogistico?.toLowerCase() === 'pendiente de pago' && (
+                          {puede(rol, 'pagar') && enc.estadoLogistico?.toLowerCase() === 'pendiente de pago' && (
                             <button type="button" onClick={() => setPagoSeleccionado(enc)} style={{ padding: '6px 12px', backgroundColor: '#D32F2F', color: 'white', border: '1px solid #D32F2F', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>
                               Pagar
                             </button>
                           )}
-                          {enc.estadoLogistico?.toLowerCase() === 'en tránsito' && (
+                          {puede(rol, 'actualizar_estado') && enc.estadoLogistico?.toLowerCase() === 'en tránsito' && (
                             <button
                               type="button"
                               disabled={llegadaConfirmando === enc.codigoTracking}
@@ -987,7 +1176,7 @@ export default function Dashboard() {
                               {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Llegó a agencia destino'}
                             </button>
                           )}
-                          {(enc.estadoLogistico?.toLowerCase() === 'llegó a agencia de destino'
+                          {puede(rol, 'actualizar_estado') && (enc.estadoLogistico?.toLowerCase() === 'llegó a agencia de destino'
                             || enc.estadoLogistico?.toLowerCase() === 'disponible para recojo'
                             || enc.estadoLogistico?.toLowerCase() === 'en reparto') && (
                             <>
@@ -1033,6 +1222,7 @@ export default function Dashboard() {
                               )}
                             </>
                           )}
+                          {puede(rol, 'asignar_manifiesto') && (
                           <button
                             type="button"
                             disabled={enc.estadoLogistico?.toLowerCase() !== 'en origen'}
@@ -1041,6 +1231,7 @@ export default function Dashboard() {
                           >
                             Asignar Manifiesto{enc.estadoLogistico?.toLowerCase() !== 'en origen' ? ' 🔒' : ''}
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1053,6 +1244,7 @@ export default function Dashboard() {
           {vistaActual === 'lista_manifiestos' && (
             <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
               <h2 style={{ color: '#1E1E2D', marginTop: 0 }}>Manifiestos de Carga</h2>
+              {puede(rol, 'crear_manifiestos') && (
               <form onSubmit={crearManifiesto} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto', gap: '12px', alignItems: 'end', marginBottom: '30px' }}>
                 <div><label style={labelStyle}>N° de bus</label><input required maxLength={20} value={manifiestoForm.numBus} onChange={e => setManifiestoForm({ ...manifiestoForm, numBus: e.target.value })} style={inputStyle} placeholder="BUS-01" /></div>
                 <div>
@@ -1071,6 +1263,7 @@ export default function Dashboard() {
                   )}
                 </div>
               </form>
+              )}
               <table style={tableStyle}>
                 <thead>
                   <tr>
@@ -1094,6 +1287,7 @@ export default function Dashboard() {
                       <td style={tdStyle}>{m.encomiendas.length}</td>
                       <td style={tdStyle}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {puede(rol, 'crear_manifiestos') && (<>
                           <button type="button" onClick={() => editarManifiesto(m)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Editar</button>
                           <button
                             type="button"
@@ -1104,6 +1298,7 @@ export default function Dashboard() {
                           >
                             Eliminar
                           </button>
+                          </>)}
                           <button type="button" onClick={() => imprimirManifiesto(m)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Imprimir / PDF</button>
                         </div>
                       </td>

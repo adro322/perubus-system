@@ -1,5 +1,7 @@
 package com.perubusSystem.perubus_system.controller;
 
+import com.perubusSystem.perubus_system.seguridad.RequiereRol;
+import com.perubusSystem.perubus_system.seguridad.Rol;
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.model.Encomienda;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
@@ -38,6 +40,7 @@ public class EncomiendaController {
     // ==========================================
     // CUS-02: COTIZAR ENVÍO
     // ==========================================
+    @RequiereRol(Rol.AGENTE)
     @PostMapping("/cotizar")
     public ResponseEntity<?> cotizarEnvio(@RequestBody Map<String, Object> datosCotizacion) {
         try {
@@ -56,6 +59,7 @@ public class EncomiendaController {
     // ==========================================
     // CUS-01: REGISTRAR ENCOMIENDA
     // ==========================================
+    @RequiereRol(Rol.AGENTE)
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarEncomienda(@RequestBody Encomienda encomienda) {
         try {
@@ -92,6 +96,7 @@ public class EncomiendaController {
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
+    @RequiereRol(Rol.AGENTE)
     @PostMapping("/{codigoTracking}/simular-pago")
     public ResponseEntity<?> simularPago(@PathVariable String codigoTracking) {
         try {
@@ -111,6 +116,7 @@ public class EncomiendaController {
         }
     }
 
+    @RequiereRol(Rol.OPERARIO)
     @PostMapping("/{codigoTracking}/confirmar-llegada")
     public ResponseEntity<?> confirmarLlegada(
             @PathVariable String codigoTracking,
@@ -133,6 +139,7 @@ public class EncomiendaController {
         }
     }
 
+    @RequiereRol(Rol.OPERARIO)
     @PostMapping("/{codigoTracking}/disponible-recojo")
     public ResponseEntity<?> marcarDisponibleParaRecojo(
             @PathVariable String codigoTracking,
@@ -155,6 +162,7 @@ public class EncomiendaController {
         }
     }
 
+    @RequiereRol(Rol.OPERARIO)
     @PostMapping("/{codigoTracking}/iniciar-reparto")
     public ResponseEntity<?> iniciarReparto(
             @PathVariable String codigoTracking,
@@ -177,6 +185,7 @@ public class EncomiendaController {
         }
     }
 
+    @RequiereRol(Rol.OPERARIO)
     @PostMapping("/{codigoTracking}/confirmar-entrega")
     public ResponseEntity<?> confirmarEntrega(
             @PathVariable String codigoTracking,
