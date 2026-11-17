@@ -178,6 +178,72 @@ class PortalCuentasTest {
         assertThat(r.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 
+    // ---------- Consulta de documento (datos enmascarados) ----------
+
+    @Test
+    void laConsultaDeDocumentoNuncaDevuelveLaFichaCompleta() {
+        var r = controller.consultarDocumento(DOC, request);
+
+        assertThat(r.getStatusCode()).isEqualTo(HttpStatus.OK);
+        Map<?, ?> cuerpo = (Map<?, ?>) r.getBody();
+        assertThat(cuerpo.get("registrado")).isEqualTo(true);
+        assertThat(cuerpo.get("nombre")).isEqualTo("Carlos M. Q.");
+        assertThat(cuerpo.get("correo")).isEqualTo("c***@gmail.com");
+        assertThat(cuerpo.get("telefono")).isEqualTo("*** *** 365");
+        assertThat(cuerpo.get("tieneCuenta")).isEqualTo(false);
+        assertThat(cuerpo.toString())
+                .doesNotContain("Mendoza")
+                .doesNotContain("carlos.mendoza")
+                .doesNotContain("987412365");
+    }
+
+    @Test
+    void laConsultaIndicaSiYaTieneCuentaOEstaBloqueada() {
+        cliente.setPassword(encoder.encode("MiClave-123"));
+        cliente.setPortalBloqueado(true);
+
+        Map<?, ?> cuerpo = (Map<?, ?>) controller.consultarDocumento(DOC, request).getBody();
+
+        assertThat(cuerpo.get("tieneCuenta")).isEqualTo(true);
+        assertThat(cuerpo.get("bloqueada")).isEqualTo(true);
+    }
+
+    @Test
+    void documentoNoRegistradoSoloDiceQueNoEstaRegistrado() {
+        when(clienteRepository.findByNumDocumento("70000002")).thenReturn(Optional.empty());
+
+        Map<?, ?> cuerpo = (Map<?, ?>) controller.consultarDocumento("70000002", request).getBody();
+
+        assertThat(cuerpo).hasSize(1);
+        assertThat(cuerpo.get("registrado")).isEqualTo(false);
+    }
+
+    @Test
+    void laConsultaRechazaDocumentosMalFormados() {
+        assertThat(controller.consultarDocumento("123", request).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(controller.consultarDocumento("abcdefgh", request).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void laConsultaDeDocumentosTieneLimitePorDireccionIp() {
+        for (int i = 0; i < 30; i++) {
+            assertThat(controller.consultarDocumento(DOC, request).getStatusCode()).isEqualTo(HttpStatus.OK);
+        }
+
+        assertThat(controller.consultarDocumento(DOC, request).getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    @Test
+    void empresaMuestraSuRazonSocialYClientesSinDatosNoFallan() {
+        Cliente empresa = new Cliente();
+        empresa.setNombres("Distribuidora Ica Norte S.A.C.");
+        empresa.setApellidos("");
+        assertThat(PortalClienteController.nombreParcial(empresa)).isEqualTo("Distribuidora Ica Norte S.A.C.");
+        assertThat(PortalClienteController.correoParcial(null)).isEmpty();
+        assertThat(PortalClienteController.correoParcial("a@b.pe")).isEqualTo("a***@b.pe");
+        assertThat(PortalClienteController.telefonoParcial(null)).isEmpty();
+    }
+
     // ---------- Cuenta bloqueada y límite de intentos ----------
 
     @Test

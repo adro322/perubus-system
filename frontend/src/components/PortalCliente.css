@@ -774,3 +774,271 @@
     text-align: left;
   }
 }
+
+/* =====================================================================
+   Estilos del rediseño del portal (banner, pestañas y camión de progreso).
+   El código ya usaba estas clases desde el PR #11, pero sus estilos no se habían subido.
+   ===================================================================== */
+
+/* ---- Banner superior ---- */
+.portal-hero-banner {
+  background: linear-gradient(135deg, #0e2747 0%, #1c4378 100%);
+  color: #fff;
+  padding: 38px 0 44px;
+}
+
+.portal-hero-inner {
+  display: flex;
+  width: min(1060px, calc(100% - 40px));
+  margin: 0 auto;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.portal-hero-inner h1 {
+  margin: 6px 0 8px;
+  color: #fff;
+  font-size: clamp(26px, 4vw, 36px);
+  line-height: 1.15;
+}
+
+.portal-hero-inner p {
+  margin: 0;
+  color: #c9d8ec;
+  font-size: 15px;
+}
+
+.portal-eyebrow-light {
+  color: #ff9aac;
+}
+
+.portal-hero-inner .portal-refresh {
+  margin-top: 0;
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  transition: background 0.2s;
+}
+
+.portal-hero-inner .portal-refresh:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* El banner ya tiene su propio espacio: la lista de envíos empieza más arriba */
+.portal-hero-banner + .portal-content {
+  padding-top: 32px;
+}
+
+/* ---- Cabecera de cada envío ---- */
+.shipment-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 5px;
+}
+
+.shipment-code-row h2 {
+  margin: 0;
+}
+
+.shipment-route-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 20px;
+  background: #eef3fa;
+  color: #29476f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ---- Pestañas de cada envío ---- */
+.shipment-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 24px;
+  border-bottom: 1px solid #e8edf4;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.shipment-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -1px;
+  padding: 13px 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #6a7b92;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.shipment-tab-btn:hover {
+  color: #102b50;
+}
+
+.shipment-tab-btn.active {
+  border-bottom-color: #d71935;
+  color: #d71935;
+}
+
+.shipment-tab-btn:focus-visible {
+  outline: 2px solid #9eb2cc;
+  outline-offset: -2px;
+}
+
+.tab-alert-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e08a00;
+  box-shadow: 0 0 0 3px rgba(224, 138, 0, 0.2);
+}
+
+.shipment-tab-panel {
+  padding-top: 4px;
+}
+
+.tab-panel-fade {
+  animation: portal-tab-fade 0.25s ease;
+}
+
+@keyframes portal-tab-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- Camión y porcentaje sobre la barra de progreso ---- */
+.truck-badge {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  margin-bottom: 1px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: #d71935;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.4;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.truck-icon {
+  display: block;
+  font-size: 22px;
+  line-height: 1;
+  transform: scaleX(-1); /* el camión mira hacia la derecha, hacia el destino */
+}
+
+.truck-arrived .truck-badge {
+  background: #1f9d55;
+}
+
+.truck-driving .truck-icon {
+  animation: portal-truck-bounce 0.6s ease-in-out infinite;
+}
+
+@keyframes portal-truck-bounce {
+  0%,
+  100% {
+    transform: scaleX(-1) translateY(0);
+  }
+  50% {
+    transform: scaleX(-1) translateY(-2px);
+  }
+}
+
+.progress-track-fill.is-moving {
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.28) 0 8px, transparent 8px 16px);
+  background-size: 22px 22px;
+  animation: portal-track-stripes 1s linear infinite;
+}
+
+@keyframes portal-track-stripes {
+  to {
+    background-position: 22px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .truck-driving .truck-icon,
+  .progress-track-fill.is-moving,
+  .tab-panel-fade {
+    animation: none;
+  }
+}
+
+/* Más aire sobre la barra para que la burbuja del porcentaje no pise el título */
+.shipment-progress-heading {
+  margin-bottom: 34px;
+}
+
+/* Al llegar, el camión queda sobre la última parada y no repite el porcentaje (ya se ve en el encabezado) */
+.progress-truck.truck-arrived {
+  margin-left: -22px;
+}
+
+.truck-arrived .truck-badge {
+  display: none;
+}
+
+/* ---- Verificación del documento al activar la cuenta ---- */
+.portal-doc-check {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #dce6f2;
+  border-radius: 9px;
+  background: #f4f8fd;
+  color: #3a4f6b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.portal-doc-check strong {
+  color: #102b50;
+}
+
+.portal-doc-check-ok {
+  border-color: #bfe3cc;
+  background: #f0faf4;
+}
+
+.portal-doc-check-warn {
+  border-color: #f2d6a2;
+  background: #fff8ec;
+  color: #7a5412;
+}
+
+.portal-doc-check button {
+  justify-self: start;
+  margin-top: 4px;
+  padding: 7px 12px;
+  border: 1px solid #c9d7ea;
+  border-radius: 7px;
+  background: #fff;
+  color: #173b67;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}

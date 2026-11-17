@@ -76,6 +76,21 @@ type RegistroForm = {
 
 type TabSeccion = 'resumen' | 'solicitudes' | 'historial';
 
+// Respuesta de /documento/{numero}: los datos llegan enmascarados desde el servidor
+type DatosDocumento = {
+  registrado: boolean;
+  nombre?: string;
+  correo?: string;
+  telefono?: string;
+  tieneCuenta?: boolean;
+  bloqueada?: boolean;
+};
+
+type VerificacionDoc =
+  | { estado: 'buscando' }
+  | { estado: 'listo'; datos: DatosDocumento }
+  | { estado: 'error'; mensaje: string };
+
 const api = axios.create({
   baseURL: 'http://localhost:8080/api/portal',
   withCredentials: true,
@@ -105,6 +120,7 @@ export default function PortalCliente() {
   const [modoRegistro, setModoRegistro] = useState(false);
   const [cambioPendiente, setCambioPendiente] = useState(false);
   const [cambioForm, setCambioForm] = useState({ nueva: '', repetir: '' });
+  const [verificacionDoc, setVerificacionDoc] = useState<VerificacionDoc | null>(null);
   const [formulario, setFormulario] = useState<RegistroForm>(formularioVacio);
   const [documento, setDocumento] = useState('');
   const [password, setPassword] = useState('');
@@ -256,6 +272,28 @@ export default function PortalCliente() {
     }
   };
 
+  useEffect(() => {
+    const doc = formulario.numDocumento;
+    if (!modoRegistro || (doc.length !== 8 && doc.length !== 11)) {
+      setVerificacionDoc(null);
+      return;
+    }
+    let vigente = true;
+    setVerificacionDoc({ estado: 'buscando' });
+    const temporizador = window.setTimeout(async () => {
+      try {
+        const respuesta = await api.get<DatosDocumento>(`/documento/${doc}`);
+        if (vigente) setVerificacionDoc({ estado: 'listo', datos: respuesta.data });
+      } catch (e: unknown) {
+        if (vigente) setVerificacionDoc({ estado: 'error', mensaje: mensajeError(e, 'No se pudo consultar el documento.') });
+      }
+    }, 400);
+    return () => {
+      vigente = false;
+      window.clearTimeout(temporizador);
+    };
+  }, [formulario.numDocumento, modoRegistro]);
+
   const iniciarSesion = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -330,6 +368,12 @@ export default function PortalCliente() {
   const actualizarRegistro = (campo: keyof RegistroForm, valor: string) => {
     setFormulario((actual) => ({ ...actual, [campo]: valor }));
   };
+
+  const puedeActivar = verificacionDoc?.estado === 'listo'
+    && verificacionDoc.datos.registrado
+    && !verificacionDoc.datos.tieneCuenta
+    && !verificacionDoc.datos.bloqueada
+    && !!verificacionDoc.datos.correo;
 
   if (cargando) {
     return <main className="portal-page"><p className="portal-loading">Cargando portal...</p></main>;
@@ -746,8 +790,59 @@ export default function PortalCliente() {
               <form className="portal-form" onSubmit={(e) => void registrar(e)}>
                 <label>
                   DNI o RUC
-                  <input value={formulario.numDocumento} onChange={(e) => actualizarRegistro('numDocumento', e.target.value)} inputMode="numeric" minLength={8} maxLength={11} required />
+                  <input value={formulario.numDocumento} onChange={(e) => actualizarRegistro('numDocumento', e.target.value.replace(/\D/g, ''))} inputMode="numeric" minLength={8} maxLength={11} required />
                 </label>
+                {verificacionDoc && (() => {
+                  if (verificacionDoc.estado === 'buscando') {
+                    return <div className="portal-doc-check" role="status">Buscando tu registro…</div>;
+                  }
+                  if (verificacionDoc.estado === 'error') {
+                    return <div className="portal-doc-check portal-doc-check-warn" role="alert">{verificacionDoc.mensaje}</div>;
+                  }
+                  const d = verificacionDoc.datos;
+                  if (!d.registrado) {
+                    return (
+                      <div className="portal-doc-check portal-doc-check-warn" role="status">
+                        <strong>No encontramos ese documento.</strong>
+                        Si ya enviaste o recibiste una encomienda, acércate a una agencia PeruBus para registrarte.
+                      </div>
+                    );
+                  }
+                  if (d.bloqueada) {
+                    return (
+                      <div className="portal-doc-check portal-doc-check-warn" role="status">
+                        <strong>Tu cuenta del portal está bloqueada.</strong>
+                        Comunícate con una agencia PeruBus.
+                      </div>
+                    );
+                  }
+                  if (d.tieneCuenta) {
+                    return (
+                      <div className="portal-doc-check" role="status">
+                        <strong>Hola, {d.nombre}. Ya tienes una cuenta.</strong>
+                        Ingresa con tu contraseña.
+                        <button type="button" onClick={() => { setDocumento(formulario.numDocumento); setModoRegistro(false); setError(''); }}>
+                          Ir a iniciar sesión
+                        </button>
+                      </div>
+                    );
+                  }
+                  if (!d.correo) {
+                    return (
+                      <div className="portal-doc-check portal-doc-check-warn" role="status">
+                        <strong>Hola, {d.nombre}.</strong>
+                        Tu registro en la agencia no tiene un correo asociado. Pide tus credenciales de acceso en una agencia PeruBus.
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="portal-doc-check portal-doc-check-ok" role="status">
+                      <strong>✓ Te encontramos, {d.nombre}.</strong>
+                      Escribe el correo que dejaste en la agencia: <strong>{d.correo}</strong>
+                      {d.telefono ? <span>y tu teléfono: <strong>{d.telefono}</strong></span> : null}
+                    </div>
+                  );
+                })()}
                 <label>
                   Correo electrónico
                   <input type="email" autoComplete="email" value={formulario.correo} onChange={(e) => actualizarRegistro('correo', e.target.value)} required />
@@ -760,7 +855,7 @@ export default function PortalCliente() {
                   Contraseña <span className="field-note">(mínimo 8 caracteres)</span>
                   <input type="password" autoComplete="new-password" value={formulario.password} onChange={(e) => actualizarRegistro('password', e.target.value)} minLength={8} required />
                 </label>
-                <button className="portal-submit" type="submit" disabled={enviando}>{enviando ? 'Activando...' : 'Activar cuenta'}</button>
+                <button className="portal-submit" type="submit" disabled={enviando || !puedeActivar}>{enviando ? 'Activando...' : 'Activar cuenta'}</button>
                 <p className="portal-privacy-note">¿Aún no tienes acceso o te entregaron una clave temporal? Pide tus credenciales en una agencia PeruBus e ingresa con ellas en “Iniciar sesión”.</p>
               </form>
             ) : (
