@@ -35,6 +35,8 @@ public class PortalClienteController {
             + "que diste en la agencia, o pide tus credenciales de acceso en una agencia PeruBus.";
     private static final String MENSAJE_BLOQUEADA = "Tu cuenta del portal está bloqueada. Comunícate con una agencia PeruBus.";
     private final LimitadorIntentos limitador = new LimitadorIntentos();
+    // Máximo 30 consultas de documento cada 10 minutos por dirección IP (cada consulta cuenta como un intento)
+    private final LimitadorIntentos consultasPorIp = new LimitadorIntentos(30, 10 * 60_000L, 10 * 60_000L, System::currentTimeMillis);
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     private final ClienteRepository clienteRepository;
@@ -107,6 +109,35 @@ public class PortalClienteController {
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                 "mensaje", "Cuenta activada. Ya puedes iniciar sesión.",
                 "numDocumento", cliente.getNumDocumento()));
+    }
+
+    // Ayuda a quien va a activar su cuenta: confirma si el documento está registrado en una agencia y le
+    // recuerda qué correo y teléfono dejó. Los datos van ENMASCARADOS: nunca se devuelve la ficha completa.
+    @GetMapping("/documento/{numero}")
+    public ResponseEntity<?> consultarDocumento(@PathVariable String numero, HttpServletRequest request) {
+        String documento = normalizar(numero);
+        if (documento == null || !documento.matches("\\d{8}|\\d{11}")) {
+            return error(HttpStatus.BAD_REQUEST, "El documento debe tener 8 dígitos (DNI) u 11 dígitos (RUC).");
+        }
+        String clave = "consulta:" + request.getRemoteAddr();
+        if (consultasPorIp.bloqueado(clave)) {
+            return error(HttpStatus.TOO_MANY_REQUESTS,
+                    "Demasiadas consultas seguidas. Inténtalo de nuevo en unos minutos.");
+        }
+        consultasPorIp.fallo(clave);
+
+        Optional<Cliente> encontrado = clienteRepository.findByNumDocumento(documento);
+        if (encontrado.isEmpty()) {
+            return ResponseEntity.ok(Map.of("registrado", false));
+        }
+        Cliente cliente = encontrado.get();
+        return ResponseEntity.ok(Map.of(
+                "registrado", true,
+                "nombre", nombreParcial(cliente),
+                "correo", correoParcial(cliente.getCorreo()),
+                "telefono", telefonoParcial(cliente.getTelefono()),
+                "tieneCuenta", cliente.tieneCuentaPortal(),
+                "bloqueada", cliente.cuentaBloqueada()));
     }
 
     @PostMapping("/login")
@@ -288,6 +319,40 @@ public class PortalClienteController {
         }
         String registrado = cliente.getTelefono() == null ? "" : cliente.getTelefono().trim();
         return registrado.isEmpty() || registrado.equals(telefono == null ? "" : telefono);
+    }
+
+    // Personas: primer nombre completo + inicial de cada apellido ("María T. H."). Empresas: la razón social es pública.
+    static String nombreParcial(Cliente cliente) {
+        String nombres = cliente.getNombres() == null ? "" : cliente.getNombres().trim();
+        String apellidos = cliente.getApellidos() == null ? "" : cliente.getApellidos().trim();
+        if (apellidos.isEmpty()) {
+            return nombres;
+        }
+        String primerNombre = nombres.isEmpty() ? "" : nombres.split("\\s+")[0];
+        StringBuilder resultado = new StringBuilder(primerNombre);
+        for (String apellido : apellidos.split("\\s+")) {
+            resultado.append(' ').append(Character.toUpperCase(apellido.charAt(0))).append('.');
+        }
+        return resultado.toString().trim();
+    }
+
+    // m***@hotmail.com
+    static String correoParcial(String correo) {
+        if (correo == null || !correo.contains("@")) {
+            return "";
+        }
+        String usuario = correo.substring(0, correo.indexOf('@'));
+        String dominio = correo.substring(correo.indexOf('@'));
+        return (usuario.isEmpty() ? "" : usuario.charAt(0)) + "***" + dominio;
+    }
+
+    // *** *** 365
+    static String telefonoParcial(String telefono) {
+        if (telefono == null || telefono.trim().length() < 3) {
+            return "";
+        }
+        String limpio = telefono.trim();
+        return "*** *** " + limpio.substring(limpio.length() - 3);
     }
 
     private boolean claveValida(String clave) {
