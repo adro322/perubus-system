@@ -103,6 +103,8 @@ export default function PortalCliente() {
   const [pagoBultoAConfirmar, setPagoBultoAConfirmar] = useState<SolicitudPortal | null>(null);
   const [pagoEnviando, setPagoEnviando] = useState<number | null>(null);
   const [modoRegistro, setModoRegistro] = useState(false);
+  const [cambioPendiente, setCambioPendiente] = useState(false);
+  const [cambioForm, setCambioForm] = useState({ nueva: '', repetir: '' });
   const [formulario, setFormulario] = useState<RegistroForm>(formularioVacio);
   const [documento, setDocumento] = useState('');
   const [password, setPassword] = useState('');
@@ -259,10 +261,37 @@ export default function PortalCliente() {
     setError('');
     setEnviando(true);
     try {
-      await api.post('/login', { numDocumento: documento, password });
-      await cargarSesion();
+      const respuesta = await api.post<{ debeCambiarPassword?: boolean }>('/login', { numDocumento: documento, password });
+      if (respuesta.data.debeCambiarPassword) {
+        // Entró con la clave temporal que le dio la agencia: debe elegir su propia contraseña
+        setCambioForm({ nueva: '', repetir: '' });
+        setCambioPendiente(true);
+      } else {
+        await cargarSesion();
+      }
     } catch (e: unknown) {
       setError(mensajeInicioSesion(e));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const cambiarClave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (cambioForm.nueva !== cambioForm.repetir) {
+      setError('Las contraseñas nuevas no coinciden.');
+      return;
+    }
+    setEnviando(true);
+    try {
+      await api.post('/cambiar-password', { passwordActual: password, passwordNueva: cambioForm.nueva });
+      setCambioPendiente(false);
+      setCambioForm({ nueva: '', repetir: '' });
+      setPassword('');
+      await cargarSesion();
+    } catch (e: unknown) {
+      setError(mensajeError(e, 'No se pudo cambiar la contraseña.'));
     } finally {
       setEnviando(false);
     }
@@ -683,17 +712,33 @@ export default function PortalCliente() {
             </div>
           </div>
           <div className="portal-auth-card">
+            {cambioPendiente ? (
+              <form className="portal-form" onSubmit={(e) => void cambiarClave(e)}>
+                <h2>Crea tu contraseña</h2>
+                <p className="portal-form-subtitle">Ingresaste con una clave temporal. Por seguridad, elige una contraseña propia para continuar.</p>
+                {error && <div className="portal-alert portal-alert-error" role="alert">{error}</div>}
+                <label>
+                  Nueva contraseña <span className="field-note">(mínimo 8 caracteres)</span>
+                  <input type="password" autoComplete="new-password" value={cambioForm.nueva} onChange={(e) => setCambioForm({ ...cambioForm, nueva: e.target.value })} minLength={8} required />
+                </label>
+                <label>
+                  Repite la nueva contraseña
+                  <input type="password" autoComplete="new-password" value={cambioForm.repetir} onChange={(e) => setCambioForm({ ...cambioForm, repetir: e.target.value })} minLength={8} required />
+                </label>
+                <button className="portal-submit" type="submit" disabled={enviando}>{enviando ? 'Guardando...' : 'Guardar y entrar'}</button>
+              </form>
+            ) : (<>
             <div className="portal-auth-tabs">
               <button type="button" className={!modoRegistro ? 'active' : ''} onClick={() => { setModoRegistro(false); setError(''); }}>
                 Iniciar sesión
               </button>
               <button type="button" className={modoRegistro ? 'active' : ''} onClick={() => { setModoRegistro(true); setError(''); }}>
-                Crear cuenta
+                Activar cuenta
               </button>
             </div>
-            <h2>{modoRegistro ? 'Regístrate en el portal' : 'Bienvenido de nuevo'}</h2>
+            <h2>{modoRegistro ? 'Activa tu cuenta' : 'Bienvenido de nuevo'}</h2>
             <p className="portal-form-subtitle">
-              {modoRegistro ? 'Crea tus credenciales para consultar tus envíos.' : 'Ingresa para consultar el estado de tus envíos.'}
+              {modoRegistro ? 'Si ya registraste un envío en una agencia, activa tu acceso con el mismo correo y teléfono que diste allí.' : 'Ingresa para consultar el estado de tus envíos.'}
             </p>
             {aviso && <div className="portal-alert portal-alert-success" role="status">{aviso}</div>}
             {error && <div className="portal-alert portal-alert-error" role="alert">{error}</div>}
@@ -704,27 +749,19 @@ export default function PortalCliente() {
                   <input value={formulario.numDocumento} onChange={(e) => actualizarRegistro('numDocumento', e.target.value)} inputMode="numeric" minLength={8} maxLength={11} required />
                 </label>
                 <label>
-                  Nombres o razón social
-                  <input value={formulario.nombres} onChange={(e) => actualizarRegistro('nombres', e.target.value)} required />
-                </label>
-                <label>
-                  Apellidos <span className="field-note">(no necesario para RUC)</span>
-                  <input value={formulario.apellidos} onChange={(e) => actualizarRegistro('apellidos', e.target.value)} />
-                </label>
-                <label>
                   Correo electrónico
                   <input type="email" autoComplete="email" value={formulario.correo} onChange={(e) => actualizarRegistro('correo', e.target.value)} required />
                 </label>
                 <label>
-                  Teléfono
+                  Teléfono <span className="field-note">(el que diste en la agencia)</span>
                   <input type="tel" autoComplete="tel" value={formulario.telefono} onChange={(e) => actualizarRegistro('telefono', e.target.value)} maxLength={9} />
                 </label>
                 <label>
                   Contraseña <span className="field-note">(mínimo 8 caracteres)</span>
                   <input type="password" autoComplete="new-password" value={formulario.password} onChange={(e) => actualizarRegistro('password', e.target.value)} minLength={8} required />
                 </label>
-                <button className="portal-submit" type="submit" disabled={enviando}>{enviando ? 'Creando cuenta...' : 'Crear cuenta'}</button>
-                <p className="portal-privacy-note">Si ya registraste un envío, usa el mismo correo que proporcionaste en la agencia.</p>
+                <button className="portal-submit" type="submit" disabled={enviando}>{enviando ? 'Activando...' : 'Activar cuenta'}</button>
+                <p className="portal-privacy-note">¿Aún no tienes acceso o te entregaron una clave temporal? Pide tus credenciales en una agencia PeruBus e ingresa con ellas en “Iniciar sesión”.</p>
               </form>
             ) : (
               <form className="portal-form" onSubmit={(e) => void iniciarSesion(e)}>
@@ -739,6 +776,7 @@ export default function PortalCliente() {
                 <button className="portal-submit" type="submit" disabled={enviando}>{enviando ? 'Ingresando...' : 'Ingresar al portal'}</button>
               </form>
             )}
+            </>)}
             <a className="portal-back-link" href="/">Volver al acceso administrativo</a>
           </div>
         </section>
@@ -813,7 +851,11 @@ function etiquetaEstadoSolicitud(estado: SolicitudPortal['estado']) {
 
 function mensajeInicioSesion(error: unknown) {
   if (axios.isAxiosError<{ mensaje?: string }>(error) && error.response?.status === 401) {
-    return 'Documento o contraseña incorrectos. Si aún no tienes cuenta, selecciona “Crear cuenta”. Si ya registraste una encomienda, usa el mismo correo que diste en la agencia.';
+    return 'Documento o contraseña incorrectos. Si aún no tienes acceso, pídelo en una agencia PeruBus o actívalo con “Activar cuenta”.';
+  }
+  if (axios.isAxiosError<{ mensaje?: string }>(error) && (error.response?.status === 403 || error.response?.status === 429)
+      && error.response?.data?.mensaje) {
+    return error.response.data.mensaje;
   }
   return mensajeError(error, 'No se pudo iniciar sesión. Revisa tus datos e inténtalo nuevamente.');
 }

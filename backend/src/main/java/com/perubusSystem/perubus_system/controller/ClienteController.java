@@ -6,6 +6,7 @@ import com.perubusSystem.perubus_system.dto.ClienteActualizacion;
 import com.perubusSystem.perubus_system.dto.ClienteRespuesta;
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.repository.ClienteRepository;
+import com.perubusSystem.perubus_system.service.CuentaPortalService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -13,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 @RestController
 @RequestMapping("/api/clientes")
@@ -22,12 +24,22 @@ public class ClienteController {
     @Autowired
     private ClienteRepository clienteRepository;
 
+    @Autowired
+    private CuentaPortalService cuentaPortalService;
+
     @RequiereRol(Rol.AGENTE)
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarCliente(@RequestBody Cliente cliente) {
-        cliente.setPassword(clienteRepository.findByNumDocumento(cliente.getNumDocumento())
-                .map(Cliente::getPassword)
-                .orElse(null));
+        String documento = cliente.getNumDocumento() == null ? "" : cliente.getNumDocumento().trim();
+        if (!documento.matches("\\d{8}|\\d{11}"))
+            return mensaje(HttpStatus.BAD_REQUEST, "El documento debe tener 8 dígitos (DNI) u 11 dígitos (RUC).");
+        if (clienteRepository.findByNumDocumento(documento).isPresent())
+            return mensaje(HttpStatus.CONFLICT, "Ya existe un cliente con ese documento.");
+        cliente.setNumDocumento(documento);
+        // La cuenta del portal solo se crea con "Generar acceso"
+        cliente.setPassword(null);
+        cliente.setPortalBloqueado(false);
+        cliente.setDebeCambiarPassword(false);
         Cliente clienteGuardado = clienteRepository.save(cliente);
         return ResponseEntity.ok(ClienteRespuesta.desde(clienteGuardado));
     }
@@ -91,6 +103,41 @@ public class ClienteController {
         } catch (DataIntegrityViolationException e) {
             return mensaje(HttpStatus.CONFLICT,
                     "El cliente tiene encomiendas o solicitudes asociadas y no se puede eliminar.");
+        }
+    }
+
+    // Genera la cuenta del portal del cliente o restablece su clave. La clave temporal se muestra una sola vez.
+    @RequiereRol(Rol.AGENTE)
+    @PostMapping("/{id}/acceso")
+    public ResponseEntity<?> generarAcceso(@PathVariable Long id) {
+        try {
+            var acceso = cuentaPortalService.generarAcceso(id);
+            Cliente cliente = acceso.cliente();
+            return ResponseEntity.ok(Map.of(
+                    "idCliente", cliente.getIdCliente(),
+                    "numDocumento", cliente.getNumDocumento(),
+                    "nombre", (cliente.getNombres() + " " + (cliente.getApellidos() == null ? "" : cliente.getApellidos())).trim(),
+                    "passwordTemporal", acceso.passwordTemporal(),
+                    "accion", acceso.restablecido() ? "RESTABLECIDO" : "GENERADO"));
+        } catch (NoSuchElementException e) {
+            return mensaje(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (IllegalStateException e) {
+            return mensaje(HttpStatus.CONFLICT, e.getMessage());
+        }
+    }
+
+    // Solo ADMIN y SUPERVISOR: Map con { "bloqueado": true | false }
+    @RequiereRol({})
+    @PutMapping("/{id}/bloqueo")
+    public ResponseEntity<?> cambiarBloqueo(@PathVariable Long id, @RequestBody Map<String, Boolean> cuerpo) {
+        if (cuerpo == null || cuerpo.get("bloqueado") == null)
+            return mensaje(HttpStatus.BAD_REQUEST, "Indique si la cuenta debe quedar bloqueada.");
+        try {
+            return ResponseEntity.ok(ClienteRespuesta.desde(cuentaPortalService.cambiarBloqueo(id, cuerpo.get("bloqueado"))));
+        } catch (NoSuchElementException e) {
+            return mensaje(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (IllegalStateException e) {
+            return mensaje(HttpStatus.CONFLICT, e.getMessage());
         }
     }
 

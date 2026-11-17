@@ -7,6 +7,7 @@ import com.perubusSystem.perubus_system.repository.ClienteRepository;
 import com.perubusSystem.perubus_system.repository.BultoEncomiendaRepository;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
 import com.perubusSystem.perubus_system.repository.EventoTrackingRepository;
+import com.perubusSystem.perubus_system.seguridad.LimitadorIntentos;
 import com.perubusSystem.perubus_system.service.EstimacionEntregaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -28,6 +29,12 @@ import java.util.Optional;
 public class PortalClienteController {
 
     private static final String SESION_CLIENTE_ID = "portalClienteId";
+    // Sesión a medias: el cliente entró con una clave temporal y aún debe cambiarla
+    private static final String SESION_CAMBIO_PENDIENTE = "portalCambioPendienteId";
+    private static final String MENSAJE_NO_VERIFICADO = "No pudimos verificar tus datos. Usa el mismo correo y teléfono "
+            + "que diste en la agencia, o pide tus credenciales de acceso en una agencia PeruBus.";
+    private static final String MENSAJE_BLOQUEADA = "Tu cuenta del portal está bloqueada. Comunícate con una agencia PeruBus.";
+    private final LimitadorIntentos limitador = new LimitadorIntentos();
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     private final ClienteRepository clienteRepository;
@@ -49,6 +56,8 @@ public class PortalClienteController {
         this.estimacionEntregaService = estimacionEntregaService;
     }
 
+    // Activa la cuenta de un cliente YA registrado en una agencia. No crea clientes nuevos:
+    // los nombres salen siempre de la base de datos, nunca de lo que escriba el visitante.
     @PostMapping("/registro")
     public ResponseEntity<?> registrar(@RequestBody PortalRegistroSolicitud solicitud) {
         String documento = normalizar(solicitud.numDocumento());
@@ -62,7 +71,7 @@ public class PortalClienteController {
         if (correo.isBlank() || !correo.matches("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")) {
             return error(HttpStatus.BAD_REQUEST, "Ingrese un correo electrónico válido.");
         }
-        if (password.length() < 8 || password.getBytes(StandardCharsets.UTF_8).length > 72) {
+        if (!claveValida(password)) {
             return error(HttpStatus.BAD_REQUEST,
                     "La contraseña debe tener al menos 8 caracteres y no superar 72 bytes UTF-8.");
         }
@@ -71,40 +80,32 @@ public class PortalClienteController {
             return error(HttpStatus.BAD_REQUEST, "El teléfono debe tener 9 dígitos.");
         }
 
-        Optional<Cliente> clienteExistente = clienteRepository.findByNumDocumento(documento);
-        Cliente cliente;
-        if (clienteExistente.isPresent()) {
-            cliente = clienteExistente.get();
-            if (cliente.getPassword() != null && !cliente.getPassword().isBlank()) {
-                return error(HttpStatus.CONFLICT, "Ya existe una cuenta para este documento.");
-            }
-            if (cliente.getCorreo() == null || !cliente.getCorreo().trim().equalsIgnoreCase(correo)) {
-                return error(HttpStatus.CONFLICT,
-                        "El correo no coincide con el registrado para este documento. Solicite actualizar sus datos en una agencia.");
-            }
-        } else {
-            if (solicitud.nombres() == null || solicitud.nombres().isBlank()) {
-                return error(HttpStatus.BAD_REQUEST, "Los nombres o razón social son obligatorios.");
-            }
-            if (documento.length() == 8 && (solicitud.apellidos() == null || solicitud.apellidos().isBlank())) {
-                return error(HttpStatus.BAD_REQUEST, "Los apellidos son obligatorios para DNI.");
-            }
-            if (clienteRepository.existsByCorreoIgnoreCase(correo)) {
-                return error(HttpStatus.CONFLICT, "El correo ya está asociado a otro cliente.");
-            }
+        String clave = "registro:" + documento;
+        if (limitador.bloqueado(clave)) {
+            return error(HttpStatus.TOO_MANY_REQUESTS, mensajeLimite(clave));
+        }
 
-            cliente = new Cliente();
-            cliente.setNumDocumento(documento);
-            cliente.setNombres(solicitud.nombres().trim());
-            cliente.setApellidos(solicitud.apellidos() == null ? "" : solicitud.apellidos().trim());
-            cliente.setTelefono(telefono);
-            cliente.setCorreo(correo);
+        // El mismo mensaje si el documento no existe o los datos no coinciden: no revela qué documentos están registrados
+        Optional<Cliente> encontrado = clienteRepository.findByNumDocumento(documento);
+        if (encontrado.isEmpty() || !datosCoinciden(encontrado.get(), correo, telefono)) {
+            limitador.fallo(clave);
+            return error(HttpStatus.CONFLICT, MENSAJE_NO_VERIFICADO);
+        }
+
+        Cliente cliente = encontrado.get();
+        if (cliente.cuentaBloqueada()) {
+            return error(HttpStatus.FORBIDDEN, MENSAJE_BLOQUEADA);
+        }
+        if (cliente.tieneCuentaPortal()) {
+            return error(HttpStatus.CONFLICT, "Ya existe una cuenta para este documento. Inicia sesión con tu contraseña.");
         }
 
         cliente.setPassword(passwordEncoder.encode(password));
+        cliente.setDebeCambiarPassword(false);
         clienteRepository.save(cliente);
+        limitador.exito(clave);
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
-                "mensaje", "Cuenta creada. Ya puedes iniciar sesión.",
+                "mensaje", "Cuenta activada. Ya puedes iniciar sesión.",
                 "numDocumento", cliente.getNumDocumento()));
     }
 
@@ -119,12 +120,22 @@ public class PortalClienteController {
         if (documento == null || password.isBlank()) {
             return error(HttpStatus.UNAUTHORIZED, "Documento o contraseña incorrectos.");
         }
+        String clave = "portal:" + documento;
+        if (limitador.bloqueado(clave)) {
+            return error(HttpStatus.TOO_MANY_REQUESTS, mensajeLimite(clave));
+        }
         Optional<Cliente> encontrado = clienteRepository.findByNumDocumento(documento);
         if (encontrado.isEmpty() || !contrasenaValida(encontrado.get().getPassword(), password)) {
+            limitador.fallo(clave);
             return error(HttpStatus.UNAUTHORIZED, "Documento o contraseña incorrectos.");
         }
 
         Cliente cliente = encontrado.get();
+        // La contraseña ya es correcta: recién ahora se avisa que la cuenta está bloqueada
+        if (cliente.cuentaBloqueada()) {
+            return error(HttpStatus.FORBIDDEN, MENSAJE_BLOQUEADA);
+        }
+        limitador.exito(clave);
         if (!esHashBcrypt(cliente.getPassword())) {
             cliente.setPassword(passwordEncoder.encode(password));
             clienteRepository.save(cliente);
@@ -135,8 +146,61 @@ public class PortalClienteController {
             sesionActual.invalidate();
         }
         HttpSession sesion = request.getSession(true);
-        sesion.setAttribute(SESION_CLIENTE_ID, cliente.getIdCliente());
+        boolean debeCambiar = cliente.debeCambiarClave();
+        // Con clave temporal no se abre la sesión completa: solo se permite cambiar la clave
+        sesion.setAttribute(debeCambiar ? SESION_CAMBIO_PENDIENTE : SESION_CLIENTE_ID, cliente.getIdCliente());
         return ResponseEntity.ok(Map.of(
+                "debeCambiarPassword", debeCambiar,
+                "nombres", valorSeguro(cliente.getNombres()),
+                "apellidos", valorSeguro(cliente.getApellidos())));
+    }
+
+    // Cambio de clave: obligatorio tras una clave temporal y voluntario con la sesión abierta
+    @PostMapping("/cambiar-password")
+    @Transactional
+    public ResponseEntity<?> cambiarPassword(
+            @RequestBody PortalCambioClaveSolicitud solicitud,
+            HttpServletRequest request) {
+        HttpSession sesion = request.getSession(false);
+        Object id = sesion == null ? null : sesion.getAttribute(SESION_CAMBIO_PENDIENTE);
+        if (id == null && sesion != null) {
+            id = sesion.getAttribute(SESION_CLIENTE_ID);
+        }
+        if (!(id instanceof Long clienteId)) {
+            return error(HttpStatus.UNAUTHORIZED, "Inicia sesión para continuar.");
+        }
+        Cliente cliente = clienteRepository.findById(clienteId).orElse(null);
+        if (cliente == null || cliente.cuentaBloqueada()) {
+            sesion.invalidate();
+            return error(HttpStatus.FORBIDDEN, MENSAJE_BLOQUEADA);
+        }
+
+        String actual = solicitud.passwordActual() == null ? "" : solicitud.passwordActual();
+        String nueva = solicitud.passwordNueva() == null ? "" : solicitud.passwordNueva();
+        String clave = "cambio:" + clienteId;
+        if (limitador.bloqueado(clave)) {
+            return error(HttpStatus.TOO_MANY_REQUESTS, mensajeLimite(clave));
+        }
+        if (!contrasenaValida(cliente.getPassword(), actual)) {
+            limitador.fallo(clave);
+            return error(HttpStatus.UNAUTHORIZED, "La contraseña actual no es correcta.");
+        }
+        if (!claveValida(nueva)) {
+            return error(HttpStatus.BAD_REQUEST,
+                    "La nueva contraseña debe tener al menos 8 caracteres y no superar 72 bytes UTF-8.");
+        }
+        if (nueva.equals(actual)) {
+            return error(HttpStatus.BAD_REQUEST, "La nueva contraseña debe ser distinta de la actual.");
+        }
+
+        limitador.exito(clave);
+        cliente.setPassword(passwordEncoder.encode(nueva));
+        cliente.setDebeCambiarPassword(false);
+        clienteRepository.save(cliente);
+        sesion.removeAttribute(SESION_CAMBIO_PENDIENTE);
+        sesion.setAttribute(SESION_CLIENTE_ID, clienteId);
+        return ResponseEntity.ok(Map.of(
+                "mensaje", "Contraseña actualizada.",
                 "nombres", valorSeguro(cliente.getNombres()),
                 "apellidos", valorSeguro(cliente.getApellidos())));
     }
@@ -214,7 +278,25 @@ public class PortalClienteController {
         if (!(clienteId instanceof Long id)) {
             return null;
         }
-        return clienteRepository.findById(id).orElse(null);
+        return clienteRepository.findById(id).filter(c -> !c.cuentaBloqueada()).orElse(null);
+    }
+
+    // El correo debe coincidir siempre; el teléfono, solo si el cliente dejó uno en la agencia
+    private boolean datosCoinciden(Cliente cliente, String correo, String telefono) {
+        if (cliente.getCorreo() == null || !cliente.getCorreo().trim().equalsIgnoreCase(correo)) {
+            return false;
+        }
+        String registrado = cliente.getTelefono() == null ? "" : cliente.getTelefono().trim();
+        return registrado.isEmpty() || registrado.equals(telefono == null ? "" : telefono);
+    }
+
+    private boolean claveValida(String clave) {
+        return clave.length() >= 8 && clave.getBytes(StandardCharsets.UTF_8).length <= 72;
+    }
+
+    private String mensajeLimite(String clave) {
+        long minutos = Math.max(1, limitador.minutosRestantes(clave));
+        return "Demasiados intentos fallidos. Inténtalo de nuevo en " + minutos + " minuto(s).";
     }
 
     private boolean esHashBcrypt(String hash) {

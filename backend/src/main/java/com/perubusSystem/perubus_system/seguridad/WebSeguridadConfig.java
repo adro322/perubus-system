@@ -11,6 +11,9 @@ public class WebSeguridadConfig implements WebMvcConfigurer {
     @Autowired
     private AccesoPorRolInterceptor accesoPorRol;
 
+    @Autowired
+    private PortalSesionInterceptor portalSesion;
+
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(accesoPorRol)
@@ -21,5 +24,10 @@ public class WebSeguridadConfig implements WebMvcConfigurer {
                         "/api/usuarios/salir",
                         "/api/usuarios/registrar",       // valida el permiso dentro del controlador
                         "/api/encomiendas/buscar/**");   // consulta pública de tracking
+
+        // Sesión del cliente: se corta si su cuenta fue bloqueada
+        registry.addInterceptor(portalSesion)
+                .addPathPatterns("/api/portal/**")
+                .excludePathPatterns("/api/portal/registro", "/api/portal/login", "/api/portal/salir");
     }
 }

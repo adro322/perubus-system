@@ -4,6 +4,7 @@ import com.perubusSystem.perubus_system.dto.UsuarioRespuesta;
 import com.perubusSystem.perubus_system.dto.UsuarioSolicitud;
 import com.perubusSystem.perubus_system.model.Usuario;
 import com.perubusSystem.perubus_system.repository.UsuarioRepository;
+import com.perubusSystem.perubus_system.seguridad.LimitadorIntentos;
 import com.perubusSystem.perubus_system.seguridad.RequiereRol;
 import com.perubusSystem.perubus_system.seguridad.Rol;
 import com.perubusSystem.perubus_system.seguridad.SesionPersonal;
@@ -29,8 +30,15 @@ public class UsuarioController {
     @Autowired
     private SesionPersonal sesionPersonal;
 
+    private final LimitadorIntentos limitador = new LimitadorIntentos();
+
     @PostMapping("/login")
     public ResponseEntity<?> autenticarUsuario(@RequestBody Usuario credenciales, HttpServletRequest request) {
+        String clave = "personal:" + (credenciales.getUsername() == null ? "" : credenciales.getUsername().trim().toLowerCase());
+        if (limitador.bloqueado(clave)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                    .body("Demasiados intentos fallidos. Inténtalo de nuevo en " + Math.max(1, limitador.minutosRestantes(clave)) + " minuto(s).");
+        }
 
         Optional<Usuario> usuarioBd = usuarioRepository.findByUsernameAndPassword(
                 credenciales.getUsername(),
@@ -42,8 +50,10 @@ public class UsuarioController {
                 sesionActual.invalidate();
             }
             request.getSession(true).setAttribute("idUsuario", usuarioBd.get().getIdUsuario());
+            limitador.exito(clave);
             return ResponseEntity.ok(usuarioBd.get());
         } else {
+            limitador.fallo(clave);
             return ResponseEntity.status(401).body("Usuario o contraseña incorrectos");
         }
     }
