@@ -1,5 +1,6 @@
 package com.perubusSystem.perubus_system.service;
 
+import com.perubusSystem.perubus_system.seguridad.Rol;
 import com.perubusSystem.perubus_system.dto.DecisionSolicitudEncomienda;
 import com.perubusSystem.perubus_system.dto.SolicitudEncomiendaRespuesta;
 import com.perubusSystem.perubus_system.dto.SolicitudEncomiendaSolicitud;
@@ -317,7 +318,7 @@ public class SolicitudEncomiendaService {
         Usuario usuario = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NoSuchElementException("No se encontró el usuario."));
         if (!Boolean.TRUE.equals(usuario.getEstado())
-                || !("ADMIN".equalsIgnoreCase(usuario.getRol()) || "AGENTE".equalsIgnoreCase(usuario.getRol()))) {
+                || !Rol.autoriza(usuario.getRol(), Rol.AGENTE)) {
             throw new IllegalStateException("No tienes permiso para gestionar solicitudes.");
         }
     }

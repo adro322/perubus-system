@@ -1,5 +1,6 @@
 package com.perubusSystem.perubus_system.service;
 
+import com.perubusSystem.perubus_system.seguridad.Rol;
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.model.Comprobante;
 import com.perubusSystem.perubus_system.model.Encomienda;
@@ -178,7 +179,7 @@ public class EncomiendaService {
         Usuario usuario = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NoSuchElementException("No se encontró el usuario."));
         if (!Boolean.TRUE.equals(usuario.getEstado())
-                || !("ADMIN".equalsIgnoreCase(usuario.getRol()) || "AGENTE".equalsIgnoreCase(usuario.getRol()))) {
+                || !Rol.autoriza(usuario.getRol(), Rol.OPERARIO)) {
             throw new IllegalStateException("No tienes permiso para confirmar la llegada.");
         }
 
@@ -249,7 +250,7 @@ public class EncomiendaService {
         Usuario usuario = usuarioRepository.findById(usuarioId)
                 .orElseThrow(() -> new NoSuchElementException("No se encontró el usuario."));
         if (!Boolean.TRUE.equals(usuario.getEstado())
-                || !("ADMIN".equalsIgnoreCase(usuario.getRol()) || "AGENTE".equalsIgnoreCase(usuario.getRol()))) {
+                || !Rol.autoriza(usuario.getRol(), Rol.OPERARIO)) {
             throw new IllegalStateException("No tienes permiso para " + accion + ".");
         }
     }

@@ -27,7 +27,7 @@ class EncomiendaServiceTest {
     private final EventoTrackingRepository eventoTrackingRepository = mock(EventoTrackingRepository.class);
     private final EncomiendaService service = new EncomiendaService();
     private final Encomienda encomienda = new Encomienda();
-    private final Usuario agente = new Usuario();
+    private final Usuario operario = new Usuario();
 
     @BeforeEach
     void preparar() {
@@ -40,15 +40,15 @@ class EncomiendaServiceTest {
         encomienda.setCodigoTracking("PERU-ABCDEFGH");
         encomienda.setEstadoLogistico("En tránsito");
         encomienda.setRuta("Lima-Ica");
-        agente.setIdUsuario(5L);
-        agente.setRol("AGENTE");
-        agente.setEstado(true);
-        when(usuarioRepository.findById(5L)).thenReturn(Optional.of(agente));
+        operario.setIdUsuario(5L);
+        operario.setRol("OPERARIO");
+        operario.setEstado(true);
+        when(usuarioRepository.findById(5L)).thenReturn(Optional.of(operario));
         when(encomiendaRepository.findByCodigoTracking("PERU-ABCDEFGH")).thenReturn(Optional.of(encomienda));
     }
 
     @Test
-    void agenteActivoPuedeConfirmarLlegadaYGeneraEvento() {
+    void operarioActivoPuedeConfirmarLlegadaYGeneraEvento() {
         when(encomiendaRepository.save(any(Encomienda.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
 
         Encomienda resultado = service.confirmarLlegada("PERU-ABCDEFGH", 5L);
@@ -59,7 +59,7 @@ class EncomiendaServiceTest {
     }
 
     @Test
-    void agenteActivoPuedeConfirmarEntregaRegistrandoQuienRecibio() {
+    void operarioActivoPuedeConfirmarEntregaRegistrandoQuienRecibio() {
         encomienda.setEstadoLogistico("Llegó a agencia de destino");
         when(encomiendaRepository.save(any(Encomienda.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
 
@@ -140,10 +140,29 @@ class EncomiendaServiceTest {
 
     @Test
     void rechazaUsuarioInactivoAntesDeCambiarElEstado() {
-        agente.setEstado(false);
+        operario.setEstado(false);
 
         assertThatThrownBy(() -> service.confirmarLlegada("PERU-ABCDEFGH", 5L))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("No tienes permiso");
+    }
+
+    @Test
+    void agenteDeVentanillaNoPuedeActualizarEstados() {
+        operario.setRol("AGENTE");
+
+        assertThatThrownBy(() -> service.confirmarLlegada("PERU-ABCDEFGH", 5L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("No tienes permiso");
+    }
+
+    @Test
+    void supervisorPuedeActualizarEstados() {
+        operario.setRol("SUPERVISOR");
+        when(encomiendaRepository.save(any(Encomienda.class))).thenAnswer(invocacion -> invocacion.getArgument(0));
+
+        Encomienda resultado = service.confirmarLlegada("PERU-ABCDEFGH", 5L);
+
+        assertThat(resultado.getEstadoLogistico()).isEqualTo("Llegó a agencia de destino");
     }
 }
