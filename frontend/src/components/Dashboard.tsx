@@ -62,6 +62,36 @@ export default function Dashboard() {
   const [manifiestoImprimir, setManifiestoImprimir] = useState<any>(null);
   const [encomiendaImprimir, setEncomiendaImprimir] = useState<any>(null);
 
+  // Estados Comprobantes (Boleta / Factura)
+  const [tipoComprobantePago, setTipoComprobantePago] = useState<'BOLETA' | 'FACTURA'>('BOLETA');
+  const [comprobanteVista, setComprobanteVista] = useState<any>(null);
+  const [comprobanteImprimir, setComprobanteImprimir] = useState<any>(null);
+  const [comprobanteCargando, setComprobanteCargando] = useState('');
+
+  // Estados Incidencias
+  const [listaIncidencias, setListaIncidencias] = useState<any[]>([]);
+  const [filtroIncidencias, setFiltroIncidencias] = useState<'TODAS' | 'ABIERTA' | 'RESUELTA'>('TODAS');
+  const [incidenciaForm, setIncidenciaForm] = useState({
+    codigoTracking: '',
+    tipoProblema: 'Retraso en ruta',
+    descripcion: '',
+  });
+  const [incidenciaEnviando, setIncidenciaEnviando] = useState(false);
+  const [incidenciaAResolver, setIncidenciaAResolver] = useState<any>(null);
+  const [resolucionTexto, setResolucionTexto] = useState('');
+
+  // Estados Estadísticas / Reportes
+  const [estadisticas, setEstadisticas] = useState<any>(null);
+  const [estadisticasCargando, setEstadisticasCargando] = useState(false);
+
+  // Estados Verificación de Entrega con DNI y Retiro de Manifiesto
+  const [entregaAConfirmar, setEntregaAConfirmar] = useState<{ encomienda: any; tipo: 'recojo' | 'entrega' } | null>(null);
+  const [dniReceptor, setDniReceptor] = useState('');
+  const [nombreReceptor, setNombreReceptor] = useState('');
+  const [avisoDniEntrega, setAvisoDniEntrega] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [manifiestoDetalle, setManifiestoDetalle] = useState<any>(null);
+  const [retirandoTracking, setRetirandoTracking] = useState('');
+
   useEffect(() => {
     if (!usuarioId || !rol) {
       navigate('/');
@@ -84,6 +114,12 @@ export default function Dashboard() {
     if (vistaActual === 'lista_manifiestos') {
       cargarManifiestos();
       cargarEncomiendas();
+    }
+    if (vistaActual === 'incidencias') {
+      cargarIncidencias();
+    }
+    if (vistaActual === 'estadisticas') {
+      cargarEstadisticas();
     }
   }, [vistaActual]);
 
@@ -243,23 +279,194 @@ export default function Dashboard() {
     } catch (error) { console.error("Error al cargar encomiendas"); }
   };
 
+  const abrirModalPago = (encomienda: any) => {
+    const doc = encomienda?.remitente?.numDocumento || '';
+    setTipoComprobantePago(doc.length === 11 ? 'FACTURA' : 'BOLETA');
+    setPagoSeleccionado(encomienda);
+  };
+
   const confirmarPago = async () => {
     if (!pagoSeleccionado || pagoProcesando) return;
     setPagoProcesando(true);
     try {
-      const res = await axios.post(`http://localhost:8080/api/encomiendas/${encodeURIComponent(pagoSeleccionado.codigoTracking)}/simular-pago`);
+      const res = await axios.post(
+        `http://localhost:8080/api/encomiendas/${encodeURIComponent(pagoSeleccionado.codigoTracking)}/simular-pago`,
+        { tipoComprobante: tipoComprobantePago },
+        { withCredentials: true }
+      );
       setListaEncomiendas((actual: any[]) => actual.map(encomienda =>
         encomienda.codigoTracking === res.data.codigoTracking
           ? { ...encomienda, estadoLogistico: res.data.estadoLogistico }
           : encomienda
       ));
+      const encPagada = pagoSeleccionado;
       setPagoSeleccionado(null);
-      mostrarMensaje(`Pago simulado registrado para ${res.data.codigoTracking}`);
+      mostrarMensaje(`Pago confirmado (${res.data.tipoComprobante || tipoComprobantePago} ${res.data.numeroSerie || ''}) para ${res.data.codigoTracking}`);
+      setComprobanteVista({
+        numeroSerie: res.data.numeroSerie || (tipoComprobantePago === 'FACTURA' ? 'F001-000001' : 'B001-000001'),
+        tipoComprobante: res.data.tipoComprobante || tipoComprobantePago,
+        estadoPago: res.data.estadoPago || 'SIMULADO',
+        montoSubtotal: res.data.subtotal,
+        montoIgv: res.data.igv,
+        montoTotal: res.data.total,
+        fechaEmision: res.data.fechaEmision || res.data.fechaPago,
+        fechaPago: res.data.fechaPago,
+        codigoTracking: encPagada.codigoTracking,
+        descripcionEncomienda: encPagada.descripcion,
+        pesoTotal: encPagada.peso,
+        ruta: encPagada.ruta,
+        clienteNombre: `${encPagada.remitente?.nombres || ''} ${encPagada.remitente?.apellidos || ''}`.trim(),
+        clienteDocumento: encPagada.remitente?.numDocumento || '',
+        destinatarioNombre: `${encPagada.destinatario?.nombres || ''} ${encPagada.destinatario?.apellidos || ''}`.trim(),
+      });
     } catch (error: any) {
       alert(error.response?.data?.mensaje || "No se pudo registrar el pago simulado.");
     } finally {
       setPagoProcesando(false);
     }
+  };
+
+  const verComprobanteEncomienda = async (codigoTracking: string) => {
+    if (comprobanteCargando) return;
+    setComprobanteCargando(codigoTracking);
+    try {
+      const res = await axios.get(
+        `http://localhost:8080/api/comprobantes/encomienda/${encodeURIComponent(codigoTracking)}`,
+        { withCredentials: true }
+      );
+      setComprobanteVista(res.data);
+    } catch (error: any) {
+      alert(error.response?.data?.mensaje || 'No se pudo obtener el comprobante de pago.');
+    } finally {
+      setComprobanteCargando('');
+    }
+  };
+
+  const imprimirComprobantePago = (comp: any) => {
+    if (!comp) return;
+    setManifiestoImprimir(null);
+    setEncomiendaImprimir(null);
+    setComprobanteImprimir(comp);
+    window.addEventListener('afterprint', () => setComprobanteImprimir(null), { once: true });
+    setTimeout(() => window.print(), 150);
+  };
+
+  // ----- Incidencias operativas -----
+  const cargarIncidencias = async () => {
+    try {
+      const res = await axios.get('http://localhost:8080/api/incidencias', { withCredentials: true });
+      setListaIncidencias(res.data);
+    } catch (error) {
+      console.error('Error al cargar incidencias');
+    }
+  };
+
+  const abrirReporteIncidencia = (codigoTracking: string) => {
+    setIncidenciaForm({
+      codigoTracking,
+      tipoProblema: 'Retraso en ruta',
+      descripcion: '',
+    });
+    setVistaActual('incidencias');
+  };
+
+  const reportarIncidencia = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (incidenciaEnviando) return;
+    setIncidenciaEnviando(true);
+    try {
+      await axios.post('http://localhost:8080/api/incidencias', {
+        codigoTracking: incidenciaForm.codigoTracking.trim().toUpperCase(),
+        tipoProblema: incidenciaForm.tipoProblema,
+        descripcion: incidenciaForm.descripcion.trim(),
+      }, { withCredentials: true });
+      mostrarMensaje(`Incidencia registrada para ${incidenciaForm.codigoTracking.toUpperCase()}`);
+      setIncidenciaForm({ codigoTracking: '', tipoProblema: 'Retraso en ruta', descripcion: '' });
+      await cargarIncidencias();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo registrar la incidencia'));
+    } finally {
+      setIncidenciaEnviando(false);
+    }
+  };
+
+  const confirmarResolverIncidencia = async () => {
+    if (!incidenciaAResolver || confirmacionProcesando) return;
+    if (!resolucionTexto.trim()) {
+      alert('Indica la solución o acciones tomadas para cerrar la incidencia.');
+      return;
+    }
+    setConfirmacionProcesando(true);
+    try {
+      await axios.post(
+        `http://localhost:8080/api/incidencias/${incidenciaAResolver.idIncidencia}/resolver`,
+        { resolucion: resolucionTexto.trim() },
+        { withCredentials: true }
+      );
+      mostrarMensaje(`Incidencia #${incidenciaAResolver.idIncidencia} marcada como resuelta`);
+      setIncidenciaAResolver(null);
+      setResolucionTexto('');
+      await cargarIncidencias();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo resolver la incidencia'));
+    } finally {
+      setConfirmacionProcesando(false);
+    }
+  };
+
+  // ----- Estadísticas y Reportes (ADMIN / SUPERVISOR) -----
+  const cargarEstadisticas = async () => {
+    setEstadisticasCargando(true);
+    try {
+      const res = await axios.get('http://localhost:8080/api/estadisticas', { withCredentials: true });
+      setEstadisticas(res.data);
+    } catch (error) {
+      console.error('Error al cargar estadísticas');
+    } finally {
+      setEstadisticasCargando(false);
+    }
+  };
+
+  const exportarEstadisticasCsv = () => {
+    if (!estadisticas) return;
+    const filas: string[][] = [
+      ['REPORTE GERENCIAL PERUBUS CARGO'],
+      ['Fecha de generacion', new Date().toLocaleString('es-PE')],
+      [],
+      ['INDICADOR', 'VALOR'],
+      ['Total de Encomiendas', String(estadisticas.totalEncomiendas)],
+      ['Encomiendas Entregadas / Recogidas', String(estadisticas.encomiendasEntregadas)],
+      ['Encomiendas En Curso', String(estadisticas.encomiendasEnCurso)],
+      ['Encomiendas Pendientes de Pago', String(estadisticas.encomiendasPendientesPago)],
+      ['Encomiendas Canceladas', String(estadisticas.encomiendasCanceladas)],
+      ['Peso Total Transportado (Kg)', Number(estadisticas.pesoTotalTransportadoKg || 0).toFixed(2)],
+      ['Ingresos Subtotal (S/)', Number(estadisticas.ingresosSubtotal || 0).toFixed(2)],
+      ['IGV 18% (S/)', Number(estadisticas.ingresosIgv || 0).toFixed(2)],
+      ['Ingresos Totales Facturados (S/)', Number(estadisticas.ingresosTotales || 0).toFixed(2)],
+      ['Boletas Emitidas', String(estadisticas.totalBoletas)],
+      ['Facturas Emitidas', String(estadisticas.totalFacturas)],
+      ['Ocupacion Promedio de Buses (%)', `${estadisticas.ocupacionPromedioBuses}%`],
+      ['Incidencias Abiertas', String(estadisticas.incidenciasAbiertas)],
+      ['Incidencias Resueltas', String(estadisticas.incidenciasResueltas)],
+      [],
+      ['DESGLOSE POR RUTA'],
+      ['Ruta', 'Envios', 'Peso Total (Kg)', 'Subtotal (S/)', 'Total con IGV (S/)'],
+      ...(estadisticas.porRuta || []).map((r: any) => [
+        r.ruta,
+        String(r.cantidadEncomiendas),
+        Number(r.pesoTotalKg || 0).toFixed(2),
+        Number(r.ingresosSubtotal || 0).toFixed(2),
+        Number(r.ingresosTotal || 0).toFixed(2),
+      ]),
+    ];
+    const csv = '\uFEFF' + filas.map(f => f.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const enlace = document.createElement('a');
+    enlace.href = url;
+    enlace.download = `reporte-perubus-${new Date().toISOString().slice(0, 10)}.csv`;
+    enlace.click();
+    URL.revokeObjectURL(url);
   };
 
   const confirmarLlegada = async (codigoTracking: string) => {
@@ -314,30 +521,113 @@ export default function Dashboard() {
     }
   };
 
-  const confirmarEntrega = async (codigoTracking: string, tipo: 'recojo' | 'entrega') => {
-    const recibidoPor = window.prompt(
-      `Nombre de la persona que ${tipo === 'recojo' ? 'recoge' : 'recibe'} la encomienda:`
-    )?.trim();
-    if (!recibidoPor) return;
+  const abrirConfirmacionEntrega = (encomienda: any, tipo: 'recojo' | 'entrega') => {
+    setEntregaAConfirmar({ encomienda, tipo });
+    setDniReceptor('');
+    setNombreReceptor('');
+    setAvisoDniEntrega(null);
+  };
+
+  const manejarDniEntrega = async (valor: string, encomienda: any) => {
+    const limpio = valor.replace(/\D/g, '');
+    setDniReceptor(limpio);
+    if (limpio.length !== 8 && limpio.length !== 11) {
+      setAvisoDniEntrega(null);
+      return;
+    }
+
+    const docDest = (encomienda?.destinatario?.numDocumento || '').trim();
+    const nombreDest = `${encomienda?.destinatario?.nombres || ''} ${encomienda?.destinatario?.apellidos || ''}`.trim();
+    if (docDest && limpio === docDest) {
+      if (nombreDest) setNombreReceptor(nombreDest);
+      setAvisoDniEntrega({
+        ok: true,
+        texto: `✓ Documento verificado: coincide con el destinatario titular (${nombreDest || docDest}).`,
+      });
+      return;
+    }
+
+    try {
+      const res = await axios.get(`http://localhost:8080/api/documentos/${limpio}`);
+      const nombreConsultado = `${res.data.nombres || ''} ${res.data.apellidos || ''}`.trim();
+      if (nombreConsultado) setNombreReceptor(nombreConsultado);
+      setAvisoDniEntrega({
+        ok: false,
+        texto: `Documento identificado (${nombreConsultado || limpio}), distinto al destinatario titular (${docDest || 'S/D'}). Verifica autorización.`,
+      });
+    } catch {
+      setAvisoDniEntrega({
+        ok: false,
+        texto: `Documento distinto al destinatario titular (${docDest || 'S/D'}). Ingresa el nombre completo de quien recibe.`,
+      });
+    }
+  };
+
+  const ejecutarConfirmarEntrega = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!entregaAConfirmar || llegadaConfirmando) return;
+    const { encomienda } = entregaAConfirmar;
+    const codigoTracking = encomienda.codigoTracking;
+    const dniLimpio = dniReceptor.trim();
+    const recibidoPor = nombreReceptor.trim();
+
+    if (dniLimpio.length !== 8 && dniLimpio.length !== 11) {
+      alert('Ingresa un DNI válido (8 dígitos) o RUC (11 dígitos) de la persona que recibe.');
+      return;
+    }
+    if (!recibidoPor) {
+      alert('Ingresa el nombre completo de la persona que recibe la encomienda.');
+      return;
+    }
+
     setLlegadaConfirmando(codigoTracking);
     try {
       const res = await axios.post(
         `http://localhost:8080/api/encomiendas/${encodeURIComponent(codigoTracking)}/confirmar-entrega`,
-        { recibidoPor },
+        { recibidoPor, dniReceptor: dniLimpio },
         { withCredentials: true }
       );
-      setListaEncomiendas(actual => actual.map(encomienda =>
-        encomienda.codigoTracking === codigoTracking
-          ? { ...encomienda, estadoLogistico: res.data.estadoLogistico }
-          : encomienda
+      setListaEncomiendas(actual => actual.map(enc =>
+        enc.codigoTracking === codigoTracking
+          ? { ...enc, estadoLogistico: res.data.estadoLogistico }
+          : enc
       ));
-      mostrarMensaje(`${res.data.estadoLogistico} confirmado para ${codigoTracking}`);
+      setEntregaAConfirmar(null);
+      mostrarMensaje(`${res.data.estadoLogistico} confirmado con DNI ${dniLimpio} para ${codigoTracking}`);
     } catch (error: unknown) {
       alert(axios.isAxiosError<{ mensaje?: string }>(error)
         ? error.response?.data?.mensaje || 'No se pudo confirmar la entrega.'
         : 'No se pudo confirmar la entrega.');
     } finally {
       setLlegadaConfirmando('');
+    }
+  };
+
+  const retirarEncomiendaDeManifiesto = async (codigoTracking: string, idManifiesto?: number) => {
+    if (retirandoTracking) return;
+    if (!window.confirm(`¿Retirar la encomienda ${codigoTracking} del manifiesto del bus? Volverá al estado "En origen".`)) return;
+    setRetirandoTracking(codigoTracking);
+    try {
+      const url = idManifiesto
+        ? `http://localhost:8080/api/manifiestos/${idManifiesto}/encomiendas/${encodeURIComponent(codigoTracking)}`
+        : `http://localhost:8080/api/manifiestos/encomiendas/${encodeURIComponent(codigoTracking)}`;
+      const res = await axios.delete(url, { withCredentials: true });
+      setListaEncomiendas(actual => actual.map(enc =>
+        enc.codigoTracking === codigoTracking
+          ? { ...enc, estadoLogistico: 'En origen', numeroBus: null, fechaViaje: null }
+          : enc
+      ));
+      setListaManifiestos(actual => actual.map(m =>
+        m.idManifiesto === res.data.idManifiesto ? res.data : m
+      ));
+      if (manifiestoDetalle && manifiestoDetalle.idManifiesto === res.data.idManifiesto) {
+        setManifiestoDetalle(res.data);
+      }
+      mostrarMensaje(`Encomienda ${codigoTracking} retirada del manifiesto y devuelta a origen`);
+    } catch (error: any) {
+      alert(error.response?.data?.mensaje || 'No se pudo retirar la encomienda del manifiesto.');
+    } finally {
+      setRetirandoTracking('');
     }
   };
 
@@ -569,19 +859,24 @@ export default function Dashboard() {
         console.error("Error al cargar encomiendas para impresión:", error);
       }
     }
+    setComprobanteImprimir(null);
+    setEncomiendaImprimir(null);
     setManifiestoImprimir(manifiesto);
     window.addEventListener('afterprint', () => setManifiestoImprimir(null), { once: true });
-    setTimeout(() => window.print(), 100);
+    setTimeout(() => window.print(), 150);
   };
 
   const imprimirEncomienda = (enc?: any) => {
     const seleccionada = enc || encomiendaConsultada || resumenRegistrado;
     if (!seleccionada) return;
+    setManifiestoImprimir(null);
+    setComprobanteImprimir(null);
+    setComprobanteVista(null);
     setEncomiendaImprimir(seleccionada);
     window.addEventListener('afterprint', () => setEncomiendaImprimir(null), { once: true });
     setTimeout(() => {
       window.print();
-    }, 100);
+    }, 150);
   };
 
   const limpiarConsulta = () => {
@@ -752,13 +1047,19 @@ export default function Dashboard() {
           {puede(rol, 'gestionar_acceso_portal') && <button onClick={() => setVistaActual('accesos_portal')} style={obtenerEstiloMenu(vistaActual === 'accesos_portal')}>Accesos al portal</button>}
           {puede(rol, 'gestionar_clientes') && <button onClick={() => setVistaActual('lista_clientes')} style={obtenerEstiloMenu(vistaActual === 'lista_clientes')}>Cartera de Clientes</button>}
 
-          {puede(rol, 'ver_manifiestos') && <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Logística</div>}
+          {(puede(rol, 'ver_manifiestos') || puede(rol, 'gestionar_incidencias')) && <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Logística</div>}
           {puede(rol, 'ver_manifiestos') && <button onClick={() => setVistaActual('lista_manifiestos')} style={obtenerEstiloMenu(vistaActual === 'lista_manifiestos')}>Manifiestos de Carga</button>}
+          {puede(rol, 'gestionar_incidencias') && (
+            <button onClick={() => setVistaActual('incidencias')} style={obtenerEstiloMenu(vistaActual === 'incidencias')}>
+              Incidencias Operativas
+            </button>
+          )}
 
-          {puede(rol, 'gestionar_personal') && (
+          {(puede(rol, 'gestionar_personal') || puede(rol, 'ver_estadisticas')) && (
             <>
               <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Administración</div>
-              <button onClick={() => setVistaActual('personal')} style={obtenerEstiloMenu(vistaActual === 'personal')}>Personal</button>
+              {puede(rol, 'ver_estadisticas') && <button onClick={() => setVistaActual('estadisticas')} style={obtenerEstiloMenu(vistaActual === 'estadisticas')}>Estadísticas y Reportes</button>}
+              {puede(rol, 'gestionar_personal') && <button onClick={() => setVistaActual('personal')} style={obtenerEstiloMenu(vistaActual === 'personal')}>Personal</button>}
             </>
           )}
         </div>
@@ -1217,10 +1518,25 @@ export default function Dashboard() {
               )}
               {encomiendaConsultada && (
                 <div style={{ padding: '20px', border: '1px solid #D32F2F', borderRadius: '8px', marginBottom: '25px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                    <h3 style={{ color: '#1E1E2D' }}>Detalle de {encomiendaConsultada.codigoTracking}</h3>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button type="button" onClick={() => imprimirEncomienda(encomiendaConsultada)} style={btnSecondary}>Imprimir / PDF</button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '8px' }}>
+                    <h3 style={{ color: '#1E1E2D', margin: 0 }}>Detalle de {encomiendaConsultada.codigoTracking}</h3>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {encomiendaConsultada.estadoLogistico?.toLowerCase() !== 'pendiente de pago'
+                        && encomiendaConsultada.estadoLogistico?.toLowerCase() !== 'cancelado' && (
+                          <button
+                            type="button"
+                            onClick={() => void verComprobanteEncomienda(encomiendaConsultada.codigoTracking)}
+                            style={btnPrimary}
+                          >
+                            Boleta / Factura
+                          </button>
+                        )}
+                      <button type="button" onClick={() => imprimirEncomienda(encomiendaConsultada)} style={btnSecondary}>Imprimir Guía</button>
+                      {puede(rol, 'gestionar_incidencias') && (
+                        <button type="button" onClick={() => abrirReporteIncidencia(encomiendaConsultada.codigoTracking)} style={btnLight}>
+                          Reportar incidencia
+                        </button>
+                      )}
                       <button type="button" onClick={limpiarConsulta} style={btnLight}>Limpiar consulta</button>
                     </div>
                   </div>
@@ -1277,12 +1593,23 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td style={tdStyle}>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
                           {puede(rol, 'pagar') && enc.estadoLogistico?.toLowerCase() === 'pendiente de pago' && (
-                            <button type="button" onClick={() => setPagoSeleccionado(enc)} style={{ padding: '6px 12px', backgroundColor: '#D32F2F', color: 'white', border: '1px solid #D32F2F', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>
+                            <button type="button" onClick={() => abrirModalPago(enc)} style={{ padding: '6px 12px', backgroundColor: '#D32F2F', color: 'white', border: '1px solid #D32F2F', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>
                               Pagar
                             </button>
                           )}
+                          {enc.estadoLogistico?.toLowerCase() !== 'pendiente de pago'
+                            && enc.estadoLogistico?.toLowerCase() !== 'cancelado' && (
+                              <button
+                                type="button"
+                                disabled={comprobanteCargando === enc.codigoTracking}
+                                onClick={() => void verComprobanteEncomienda(enc.codigoTracking)}
+                                style={{ padding: '6px 10px', backgroundColor: '#EEF2FF', color: '#1D4ED8', border: '1px solid #C7D2FE', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}
+                              >
+                                {comprobanteCargando === enc.codigoTracking ? 'Cargando...' : 'Boleta/Factura'}
+                              </button>
+                            )}
                           {puede(rol, 'actualizar_estado') && enc.estadoLogistico?.toLowerCase() === 'en tránsito' && (
                             <button
                               type="button"
@@ -1321,7 +1648,7 @@ export default function Dashboard() {
                                 <button
                                   type="button"
                                   disabled={llegadaConfirmando === enc.codigoTracking}
-                                  onClick={() => void confirmarEntrega(enc.codigoTracking, 'recojo')}
+                                  onClick={() => abrirConfirmacionEntrega(enc, 'recojo')}
                                   style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
                                 >
                                   {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Confirmar recojo'}
@@ -1331,13 +1658,24 @@ export default function Dashboard() {
                                 <button
                                   type="button"
                                   disabled={llegadaConfirmando === enc.codigoTracking}
-                                  onClick={() => void confirmarEntrega(enc.codigoTracking, 'entrega')}
+                                  onClick={() => abrirConfirmacionEntrega(enc, 'entrega')}
                                   style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
                                 >
                                   {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Confirmar entrega'}
                                 </button>
                               )}
                             </>
+                          )}
+                          {puede(rol, 'asignar_manifiesto') && enc.estadoLogistico?.toLowerCase() === 'en tránsito' && (
+                            <button
+                              type="button"
+                              disabled={retirandoTracking === enc.codigoTracking}
+                              onClick={() => void retirarEncomiendaDeManifiesto(enc.codigoTracking)}
+                              style={{ padding: '6px 10px', backgroundColor: '#FDECEC', color: '#B42318', border: '1px solid #F5C2C0', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                              title="Retirar encomienda del manifiesto y devolver a En origen"
+                            >
+                              {retirandoTracking === enc.codigoTracking ? 'Retirando...' : 'Retirar de bus'}
+                            </button>
                           )}
                           {puede(rol, 'asignar_manifiesto') && (
                           <button
@@ -1349,6 +1687,24 @@ export default function Dashboard() {
                             Asignar Manifiesto{enc.estadoLogistico?.toLowerCase() !== 'en origen' ? ' 🔒' : ''}
                           </button>
                           )}
+                          {puede(rol, 'gestionar_incidencias') && (
+                            <button
+                              type="button"
+                              onClick={() => abrirReporteIncidencia(enc.codigoTracking)}
+                              style={{ padding: '6px 10px', backgroundColor: '#FFF4E5', color: '#B26A00', border: '1px solid #FFE0B2', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                              title="Reportar incidencia sobre este envío"
+                            >
+                              Incidencia
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => imprimirEncomienda(enc)}
+                            style={{ padding: '6px 10px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                            title="Imprimir o descargar Guía de Encomienda en PDF"
+                          >
+                            Imprimir / PDF
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1404,6 +1760,13 @@ export default function Dashboard() {
                       <td style={tdStyle}>{m.encomiendas.length}</td>
                       <td style={tdStyle}>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setManifiestoDetalle(m)}
+                            style={{ padding: '6px 12px', backgroundColor: '#EEF2FF', color: '#1D4ED8', border: '1px solid #C7D2FE', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}
+                          >
+                            Ver bultos ({m.encomiendas.length})
+                          </button>
                           {puede(rol, 'crear_manifiestos') && (<>
                           <button type="button" onClick={() => editarManifiesto(m)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Editar</button>
                           <button
@@ -1427,11 +1790,340 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* =========================================
+              VISTA 6: INCIDENCIAS OPERATIVAS
+             ========================================= */}
+          {vistaActual === 'incidencias' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '24px' }}>Gestión de Incidencias</h2>
+                  <p style={{ color: '#6B7280', margin: '4px 0 0', fontSize: '13px' }}>
+                    Registra percances en almacén, viaje o reparto. Cada reporte y resolución se anota automáticamente en el historial de tracking del envío.
+                  </p>
+                </div>
+                <button type="button" onClick={() => void cargarIncidencias()} style={btnSecondary}>Actualizar</button>
+              </div>
+
+              <form onSubmit={reportarIncidencia} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', padding: '20px', backgroundColor: '#F8F9FA', borderRadius: '10px', border: '1px solid #E4E6EF', marginBottom: '25px' }}>
+                <div style={{ gridColumn: '1 / -1', fontWeight: 700, color: '#1E1E2D' }}>Reportar nueva incidencia</div>
+                <div>
+                  <label style={labelStyle}>Código de Tracking</label>
+                  <input
+                    required
+                    maxLength={13}
+                    placeholder="PERU-XXXXXXXX"
+                    value={incidenciaForm.codigoTracking}
+                    onChange={e => setIncidenciaForm({ ...incidenciaForm, codigoTracking: e.target.value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase() })}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Tipo de problema</label>
+                  <select
+                    required
+                    value={incidenciaForm.tipoProblema}
+                    onChange={e => setIncidenciaForm({ ...incidenciaForm, tipoProblema: e.target.value })}
+                    style={inputStyle}
+                  >
+                    <option value="Retraso en ruta">Retraso en ruta</option>
+                    <option value="Paquete dañado / observación de embalaje">Paquete dañado / observación de embalaje</option>
+                    <option value="Destinatario ausente en reparto">Destinatario ausente en reparto</option>
+                    <option value="Dirección incorrecta o inaccesible">Dirección incorrecta o inaccesible</option>
+                    <option value="Bulto extraviado o incompleto">Bulto extraviado o incompleto</option>
+                    <option value="Falla mecánica de unidad">Falla mecánica de unidad</option>
+                    <option value="Otro incidente operativo">Otro incidente operativo</option>
+                  </select>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={labelStyle}>Descripción detallada del incidente</label>
+                  <textarea
+                    required
+                    rows={3}
+                    maxLength={1000}
+                    placeholder="Detalla qué ocurrió, ubicación o medidas iniciales tomadas..."
+                    value={incidenciaForm.descripcion}
+                    onChange={e => setIncidenciaForm({ ...incidenciaForm, descripcion: e.target.value })}
+                    style={inputStyle}
+                  />
+                </div>
+                <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button type="submit" disabled={incidenciaEnviando} style={btnPrimary}>
+                    {incidenciaEnviando ? 'Registrando...' : 'Registrar incidencia'}
+                  </button>
+                </div>
+              </form>
+
+              <div className="notification-tabs" role="tablist">
+                {(['TODAS', 'ABIERTA', 'RESUELTA'] as const).map(f => {
+                  const totalFiltro = f === 'TODAS'
+                    ? listaIncidencias.length
+                    : listaIncidencias.filter((inc: any) => (inc.estado || 'ABIERTA') === f).length;
+                  return (
+                    <button
+                      key={f}
+                      type="button"
+                      role="tab"
+                      aria-selected={filtroIncidencias === f}
+                      className={filtroIncidencias === f ? 'notification-tab active' : 'notification-tab'}
+                      onClick={() => setFiltroIncidencias(f)}
+                    >
+                      {f === 'TODAS' ? 'Todas' : f === 'ABIERTA' ? 'Abiertas' : 'Resueltas'} <span>{totalFiltro}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {(() => {
+                const filtradas = filtroIncidencias === 'TODAS'
+                  ? listaIncidencias
+                  : listaIncidencias.filter((inc: any) => (inc.estado || 'ABIERTA') === filtroIncidencias);
+                if (filtradas.length === 0) {
+                  return <p style={{ color: '#777' }}>No hay incidencias registradas en esta categoría.</p>;
+                }
+                return (
+                  <div className="notification-list">
+                    {filtradas.map((inc: any) => {
+                      const abierta = (inc.estado || 'ABIERTA') !== 'RESUELTA';
+                      return (
+                        <article key={inc.idIncidencia} className="notification-card">
+                          <div className="notification-card-heading">
+                            <div>
+                              <strong style={{ fontSize: '14px' }}>#{inc.idIncidencia} · {inc.tipoProblema}</strong>
+                              <span style={{ marginLeft: '10px', color: '#D32F2F', fontWeight: 700 }}>{inc.codigoTracking || 'Sin tracking'}</span>
+                              {inc.ruta && <span style={{ marginLeft: '8px', fontSize: '12px' }}>({inc.ruta})</span>}
+                            </div>
+                            <span style={{
+                              backgroundColor: abierta ? '#FFF4E5' : '#E8F5E9',
+                              color: abierta ? '#B26A00' : '#2E7D32',
+                              padding: '4px 10px',
+                              borderRadius: '999px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                            }}>
+                              {abierta ? 'ABIERTA' : 'RESUELTA'}
+                            </span>
+                          </div>
+                          <p style={{ marginTop: '8px' }}><strong>Reporte:</strong> {inc.descripcion}</p>
+                          <p style={{ fontSize: '12px', color: '#6B7280' }}>
+                            Fecha de reporte: {inc.fechaReporte ? new Date(inc.fechaReporte).toLocaleString('es-PE') : '—'}
+                            {inc.estadoEncomienda && ` · Estado actual del envío: ${etiquetaEstadoEncomienda(inc.estadoEncomienda)}`}
+                          </p>
+                          {inc.resolucion && (
+                            <div style={{ marginTop: '8px', padding: '10px 12px', backgroundColor: '#F3FAF5', borderRadius: '6px', borderLeft: '3px solid #2E7D32' }}>
+                              <strong>Solución aplicada:</strong> {inc.resolucion}
+                              {inc.fechaResolucion && (
+                                <div style={{ fontSize: '11px', color: '#6B7280', marginTop: '4px' }}>
+                                  Resuelta el {new Date(inc.fechaResolucion).toLocaleString('es-PE')}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {abierta && (
+                            <div className="notification-actions" style={{ marginTop: '10px' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setResolucionTexto('');
+                                  setIncidenciaAResolver(inc);
+                                }}
+                                style={{ ...btnPrimary, padding: '8px 14px', fontSize: '13px' }}
+                              >
+                                Marcar como resuelta
+                              </button>
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* =========================================
+              VISTA 7: PANEL DE ESTADÍSTICAS Y REPORTES
+             ========================================= */}
+          {vistaActual === 'estadisticas' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '24px' }}>Panel de Estadísticas y Reportes</h2>
+                  <p style={{ color: '#6B7280', margin: '4px 0 0', fontSize: '13px' }}>
+                    Indicadores operativos, facturación electrónica (Boletas y Facturas) y rendimiento por ruta.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => void cargarEstadisticas()} style={btnSecondary}>
+                    {estadisticasCargando ? 'Actualizando...' : 'Actualizar'}
+                  </button>
+                  <button type="button" disabled={!estadisticas} onClick={exportarEstadisticasCsv} style={btnPrimary}>
+                    Exportar CSV (Excel)
+                  </button>
+                </div>
+              </div>
+
+              {!estadisticas ? (
+                <p style={{ color: '#777' }}>{estadisticasCargando ? 'Cargando indicadores...' : 'No se pudieron cargar las estadísticas.'}</p>
+              ) : (
+                <div style={{ display: 'grid', gap: '24px' }}>
+                  {/* Tarjetas KPI */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #D32F2F' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Ingresos Totales (c/ IGV)</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        S/ {Number(estadisticas.ingresosTotales || 0).toFixed(2)}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        Subtotal: S/ {Number(estadisticas.ingresosSubtotal || 0).toFixed(2)} · IGV: S/ {Number(estadisticas.ingresosIgv || 0).toFixed(2)}
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #102B50' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Total Encomiendas</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        {estadisticas.totalEncomiendas}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#2E7D32', marginTop: '4px' }}>
+                        {estadisticas.encomiendasEntregadas} entregadas · {estadisticas.encomiendasEnCurso} en curso · {estadisticas.encomiendasPendientesPago} por pagar
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #2E7D32' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Comprobantes Emitidos</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        {estadisticas.totalComprobantes}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        Boletas (B001): <strong>{estadisticas.totalBoletas}</strong> · Facturas (F001): <strong>{estadisticas.totalFacturas}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #1D4ED8' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Carga y Flota</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        {Number(estadisticas.pesoTotalTransportadoKg || 0).toFixed(2)} Kg
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        {estadisticas.totalManifiestos} manifiestos · Ocupación media: <strong>{estadisticas.ocupacionPromedioBuses}%</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #7C3AED' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Cartera de Clientes</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        {estadisticas.totalClientes}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        Con acceso activo al portal: <strong>{estadisticas.clientesConPortalActivo}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #D97706' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Atención e Incidencias</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        {estadisticas.incidenciasAbiertas} abiertas
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        {estadisticas.incidenciasResueltas} resueltas · {estadisticas.solicitudesPendientes} solicitudes pendientes
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Rendimiento por Ruta */}
+                  <div style={{ padding: '20px', border: '1px solid #E4E6EF', borderRadius: '10px' }}>
+                    <h3 style={{ marginTop: 0, marginBottom: '12px', color: '#1E1E2D' }}>Rendimiento e Ingresos por Ruta</h3>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>Ruta</th>
+                          <th style={thStyle}>Envíos</th>
+                          <th style={thStyle}>Peso Total</th>
+                          <th style={thStyle}>Subtotal</th>
+                          <th style={thStyle}>Total (c/ IGV)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(estadisticas.porRuta || []).map((r: any) => (
+                          <tr key={r.ruta} style={trStyle}>
+                            <td style={{ ...tdStyle, fontWeight: 700 }}>{r.ruta}</td>
+                            <td style={tdStyle}>{r.cantidadEncomiendas}</td>
+                            <td style={tdStyle}>{Number(r.pesoTotalKg || 0).toFixed(2)} Kg</td>
+                            <td style={tdStyle}>S/ {Number(r.ingresosSubtotal || 0).toFixed(2)}</td>
+                            <td style={{ ...tdStyle, fontWeight: 700, color: '#2E7D32' }}>S/ {Number(r.ingresosTotal || 0).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Distribución por Estado Logístico */}
+                  <div style={{ padding: '20px', border: '1px solid #E4E6EF', borderRadius: '10px' }}>
+                    <h3 style={{ marginTop: 0, marginBottom: '14px', color: '#1E1E2D' }}>Distribución por Estado Logístico</h3>
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      {(estadisticas.porEstado || []).map((item: any) => (
+                        <div key={item.estado}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                            <strong>{etiquetaEstadoEncomienda(item.estado)}</strong>
+                            <span>{item.cantidad} envío(s) ({item.porcentaje}%)</span>
+                          </div>
+                          <div style={{ height: '8px', backgroundColor: '#EDF2F7', borderRadius: '999px', overflow: 'hidden' }}>
+                            <div style={{ width: `${Math.min(100, item.porcentaje)}%`, height: '100%', backgroundColor: '#D32F2F', borderRadius: '999px' }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Últimos Comprobantes Emitidos */}
+                  {Array.isArray(estadisticas.ultimosComprobantes) && estadisticas.ultimosComprobantes.length > 0 && (
+                    <div style={{ padding: '20px', border: '1px solid #E4E6EF', borderRadius: '10px' }}>
+                      <h3 style={{ marginTop: 0, marginBottom: '12px', color: '#1E1E2D' }}>Últimos Comprobantes Emitidos</h3>
+                      <table style={tableStyle}>
+                        <thead>
+                          <tr>
+                            <th style={thStyle}>Serie / N°</th>
+                            <th style={thStyle}>Tipo</th>
+                            <th style={thStyle}>Tracking</th>
+                            <th style={thStyle}>Cliente</th>
+                            <th style={thStyle}>Total</th>
+                            <th style={thStyle}>Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {estadisticas.ultimosComprobantes.map((comp: any) => (
+                            <tr key={comp.idComprobante || comp.numeroSerie} style={trStyle}>
+                              <td style={{ ...tdStyle, fontWeight: 700, fontFamily: 'monospace' }}>{comp.numeroSerie}</td>
+                              <td style={tdStyle}>{comp.tipoComprobante}</td>
+                              <td style={{ ...tdStyle, color: '#D32F2F', fontWeight: 600 }}>{comp.codigoTracking}</td>
+                              <td style={tdStyle}>{comp.clienteNombre} ({comp.clienteDocumento})</td>
+                              <td style={{ ...tdStyle, fontWeight: 700 }}>S/ {Number(comp.montoTotal || 0).toFixed(2)}</td>
+                              <td style={tdStyle}>
+                                <button
+                                  type="button"
+                                  onClick={() => setComprobanteVista(comp)}
+                                  style={btnMini}
+                                >
+                                  Ver / Imprimir
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
     </div>
     {credenciales && (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}>
+      <div className="no-print" style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}>
         <section role="dialog" aria-modal="true" style={{ width: '100%', maxWidth: '460px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}>
           <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>{credenciales.accion === 'RESTABLECIDO' ? 'Clave restablecida' : 'Acceso al portal generado'}</h2>
           <p style={{ margin: '6px 0 16px', color: '#777' }}>{credenciales.nombre}</p>
@@ -1450,7 +2142,7 @@ export default function Dashboard() {
       </div>
     )}
     {encomiendaAAsignar && (
-      <div onClick={() => !asignando && setEncomiendaAAsignar(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}>
+      <div className="no-print" onClick={() => !asignando && setEncomiendaAAsignar(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}>
         <section role="dialog" aria-modal="true" onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: '460px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}>
           <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>Asignar a manifiesto</h2>
           <p style={{ margin: '6px 0 16px', color: '#777' }}>Encomienda {encomiendaAAsignar.codigoTracking} · {encomiendaAAsignar.peso} Kg · Ruta: <strong>{encomiendaAAsignar.ruta || 'sin ruta'}</strong></p>
@@ -1521,8 +2213,11 @@ export default function Dashboard() {
       const subtotal = Number(pagoSeleccionado.tarifaBase || 0);
       const igv = Math.round((subtotal * 0.18 + Number.EPSILON) * 100) / 100;
       const total = subtotal + igv;
+      const docRemitente = pagoSeleccionado.remitente?.numDocumento || '';
+      const tieneRuc = docRemitente.length === 11;
       return (
         <div
+          className="no-print"
           onClick={() => !pagoProcesando && setPagoSeleccionado(null)}
           style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}
         >
@@ -1531,31 +2226,354 @@ export default function Dashboard() {
             aria-modal="true"
             aria-labelledby="pago-title"
             onClick={event => event.stopPropagation()}
-            style={{ width: '100%', maxWidth: '460px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}
+            style={{ width: '100%', maxWidth: '480px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '16px', marginBottom: '20px' }}>
               <div>
-                <h2 id="pago-title" style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>Simular pago</h2>
+                <h2 id="pago-title" style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>Emitir Comprobante y Registrar Pago</h2>
                 <p style={{ margin: '6px 0 0', color: '#777' }}>Encomienda {pagoSeleccionado.codigoTracking}</p>
               </div>
               <button type="button" aria-label="Cerrar" title="Cerrar" disabled={pagoProcesando} onClick={() => setPagoSeleccionado(null)} style={{ border: 0, background: 'transparent', fontSize: '22px', color: '#666', cursor: 'pointer' }}>×</button>
             </div>
-            <div style={{ display: 'grid', gap: '12px', padding: '16px 0', borderTop: '1px solid #E4E6EF', borderBottom: '1px solid #E4E6EF' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}><span>Cliente</span><strong>{pagoSeleccionado.remitente?.nombres} {pagoSeleccionado.remitente?.apellidos}</strong></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Descripción</span><strong>{pagoSeleccionado.descripcion || 'Encomienda'}</strong></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Subtotal</span><strong>S/ {subtotal.toFixed(2)}</strong></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>IGV (18%)</span><strong>S/ {igv.toFixed(2)}</strong></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', color: '#1E1E2D' }}><strong>Total</strong><strong>S/ {total.toFixed(2)}</strong></div>
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Tipo de Comprobante Electrónico</label>
+              <select
+                value={tipoComprobantePago}
+                onChange={e => setTipoComprobantePago(e.target.value as 'BOLETA' | 'FACTURA')}
+                style={inputStyle}
+              >
+                <option value="BOLETA">Boleta de Venta Electrónica (B001)</option>
+                <option value="FACTURA" disabled={!tieneRuc}>
+                  Factura Electrónica (F001) {!tieneRuc ? '— Requiere RUC de 11 dígitos' : ''}
+                </option>
+              </select>
             </div>
-            <p style={{ fontSize: '12px', color: '#777', lineHeight: 1.5 }}>Pago simulado. Se guardará el desglose y la fecha para la futura emisión del comprobante.</p>
+            <div style={{ display: 'grid', gap: '12px', padding: '16px 0', borderTop: '1px solid #E4E6EF', borderBottom: '1px solid #E4E6EF' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}><span>Cliente ({docRemitente || 'S/D'})</span><strong>{pagoSeleccionado.remitente?.nombres} {pagoSeleccionado.remitente?.apellidos}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Descripción</span><strong>{pagoSeleccionado.descripcion || 'Encomienda'}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Op. Gravada (Subtotal)</span><strong>S/ {subtotal.toFixed(2)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>IGV (18%)</span><strong>S/ {igv.toFixed(2)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', color: '#1E1E2D' }}><strong>Importe Total</strong><strong>S/ {total.toFixed(2)}</strong></div>
+            </div>
+            <p style={{ fontSize: '12px', color: '#777', lineHeight: 1.5 }}>Se emitirá el comprobante electrónico con serie correlativa y podrás imprimirlo de inmediato.</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
               <button type="button" disabled={pagoProcesando} onClick={() => setPagoSeleccionado(null)} style={{ padding: '10px 14px', backgroundColor: 'white', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', cursor: pagoProcesando ? 'not-allowed' : 'pointer' }}>Cancelar</button>
-              <button type="button" disabled={pagoProcesando} onClick={confirmarPago} style={{ padding: '10px 14px', backgroundColor: '#D32F2F', color: 'white', border: 0, borderRadius: '4px', fontWeight: 600, cursor: pagoProcesando ? 'wait' : 'pointer' }}>{pagoProcesando ? 'Procesando...' : 'Confirmar pago'}</button>
+              <button type="button" disabled={pagoProcesando} onClick={confirmarPago} style={{ padding: '10px 14px', backgroundColor: '#D32F2F', color: 'white', border: 0, borderRadius: '4px', fontWeight: 600, cursor: pagoProcesando ? 'wait' : 'pointer' }}>{pagoProcesando ? 'Procesando...' : 'Confirmar pago y emitir'}</button>
             </div>
           </section>
         </div>
       );
     })()}
+    {comprobanteVista && (
+      <div
+        className="no-print"
+        onClick={() => setComprobanteVista(null)}
+        style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          onClick={event => event.stopPropagation()}
+          style={{ width: '100%', maxWidth: '520px', backgroundColor: 'white', borderRadius: '10px', padding: '28px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', borderBottom: '2px solid #1E1E2D', paddingBottom: '14px', marginBottom: '16px' }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '18px', color: '#1E1E2D' }}>PERUBUS CARGO S.A.C.</div>
+              <div style={{ fontSize: '12px', color: '#6B7280' }}>RUC: 20100070970 · Av. México 333, La Victoria, Lima</div>
+            </div>
+            <div style={{ border: '1px solid #D32F2F', borderRadius: '6px', padding: '8px 12px', textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', fontWeight: 800, color: '#D32F2F' }}>
+                {comprobanteVista.tipoComprobante === 'FACTURA' ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA ELECTRÓNICA'}
+              </div>
+              <div style={{ fontSize: '15px', fontWeight: 800, fontFamily: 'monospace', color: '#1E1E2D' }}>
+                {comprobanteVista.numeroSerie}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: '8px', fontSize: '13px', marginBottom: '16px' }}>
+            <div><strong>Cliente / Razón Social:</strong> {comprobanteVista.clienteNombre || 'Cliente'}</div>
+            <div><strong>{comprobanteVista.tipoComprobante === 'FACTURA' ? 'RUC' : 'DNI / Doc.'}:</strong> {comprobanteVista.clienteDocumento || '—'}</div>
+            <div><strong>Fecha de emisión:</strong> {comprobanteVista.fechaEmision ? new Date(comprobanteVista.fechaEmision).toLocaleString('es-PE') : new Date().toLocaleDateString('es-PE')}</div>
+            <div><strong>Código de Tracking:</strong> {comprobanteVista.codigoTracking} · <strong>Ruta:</strong> {comprobanteVista.ruta || '—'}</div>
+            {comprobanteVista.destinatarioNombre && <div><strong>Destinatario:</strong> {comprobanteVista.destinatarioNombre}</div>}
+          </div>
+
+          <div style={{ padding: '12px', backgroundColor: '#F8F9FA', borderRadius: '8px', border: '1px solid #E4E6EF', marginBottom: '16px', fontSize: '13px' }}>
+            <div style={{ fontWeight: 700, marginBottom: '6px', color: '#1E1E2D' }}>Detalle del servicio</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Servicio de transporte de encomienda: {comprobanteVista.descripcionEncomienda || 'Carga general'} ({comprobanteVista.pesoTotal ?? '—'} Kg)</span>
+              <strong>S/ {Number(comprobanteVista.montoSubtotal || 0).toFixed(2)}</strong>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: '6px', borderTop: '1px solid #E4E6EF', paddingTop: '12px', fontSize: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Op. Gravada (Subtotal)</span><strong>S/ {Number(comprobanteVista.montoSubtotal || 0).toFixed(2)}</strong></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>IGV (18%)</span><strong>S/ {Number(comprobanteVista.montoIgv || 0).toFixed(2)}</strong></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', color: '#D32F2F', marginTop: '4px' }}>
+              <strong>IMPORTE TOTAL</strong>
+              <strong>S/ {Number(comprobanteVista.montoTotal || 0).toFixed(2)}</strong>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+            <button type="button" onClick={() => setComprobanteVista(null)} style={btnLight}>Cerrar</button>
+            <button type="button" onClick={() => imprimirComprobantePago(comprobanteVista)} style={btnPrimary}>Imprimir / Descargar PDF</button>
+          </div>
+        </section>
+      </div>
+    )}
+    {incidenciaAResolver && (
+      <ConfirmacionModal
+        titulo={`Resolver incidencia #${incidenciaAResolver.idIncidencia}`}
+        mensaje={`¿Marcar como resuelta la incidencia de "${incidenciaAResolver.tipoProblema}" correspondiente al envío ${incidenciaAResolver.codigoTracking}?`}
+        textoConfirmar="Confirmar solución"
+        procesando={confirmacionProcesando}
+        onCancelar={() => setIncidenciaAResolver(null)}
+        onConfirmar={() => void confirmarResolverIncidencia()}
+      >
+        <label className="confirmation-comment">
+          Acción tomada / solución aplicada (obligatorio)
+          <textarea
+            maxLength={1000}
+            required
+            value={resolucionTexto}
+            onChange={e => setResolucionTexto(e.target.value)}
+            rows={3}
+            placeholder="Ej: Se reprogramó la entrega con el destinatario y se verificó el estado del paquete..."
+          />
+        </label>
+      </ConfirmacionModal>
+    )}
+    {(comprobanteImprimir || comprobanteVista) && (() => {
+      const comp = comprobanteImprimir || comprobanteVista;
+      if (!comp) return null;
+      return (
+        <div className="comprobante-impresion">
+          <div className="comprobante-cabecera-doc">
+            <div className="comprobante-empresa">
+              <h1>PERUBUS CARGO S.A.C.</h1>
+              <p><strong>RUC:</strong> 20100070970</p>
+              <p><strong>Dirección Fiscal:</strong> Av. México 333, La Victoria — Lima, Perú</p>
+              <p><strong>Servicio:</strong> Transporte Interprovincial de Carga y Encomiendas (Lima · Pisco · Ica · Nazca)</p>
+            </div>
+            <div className="comprobante-recuadro-sunat">
+              <div className="ruc">R.U.C. 20100070970</div>
+              <div className="tipo">
+                {comp.tipoComprobante === 'FACTURA' ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA ELECTRÓNICA'}
+              </div>
+              <div className="serie">{comp.numeroSerie}</div>
+            </div>
+          </div>
+
+          <div className="comprobante-grid-datos">
+            <div><strong>Señor(es) / Razón Social:</strong> {comp.clienteNombre || 'Cliente'}</div>
+            <div><strong>Fecha de Emisión:</strong> {comp.fechaEmision ? new Date(comp.fechaEmision).toLocaleString('es-PE') : new Date().toLocaleDateString('es-PE')}</div>
+            <div><strong>{comp.tipoComprobante === 'FACTURA' ? 'RUC del Cliente' : 'DNI / Documento'}:</strong> {comp.clienteDocumento || '—'}</div>
+            <div><strong>Moneda / Condición:</strong> SOLES (PEN) · CONTADO</div>
+            <div><strong>Código de Tracking:</strong> {comp.codigoTracking}</div>
+            <div><strong>Ruta de Envío:</strong> {comp.ruta || '—'}</div>
+            {comp.destinatarioNombre && (
+              <div style={{ gridColumn: '1 / -1' }}><strong>Destinatario consignado:</strong> {comp.destinatarioNombre}</div>
+            )}
+          </div>
+
+          <table className="comprobante-tabla">
+            <thead>
+              <tr>
+                <th>Cant.</th>
+                <th>Unidad</th>
+                <th>Código</th>
+                <th>Descripción del Servicio</th>
+                <th>Peso</th>
+                <th>Valor Unit.</th>
+                <th>Importe</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td>ZZ (Servicio)</td>
+                <td>{comp.codigoTracking}</td>
+                <td>Servicio de transporte de encomienda: {comp.descripcionEncomienda || 'Carga general'} ({comp.ruta || 'Ruta interprovincial'})</td>
+                <td>{Number(comp.pesoTotal || 0).toFixed(2)} Kg</td>
+                <td>S/ {Number(comp.montoSubtotal || 0).toFixed(2)}</td>
+                <td>S/ {Number(comp.montoSubtotal || 0).toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div className="comprobante-totales">
+            <div><span>Op. Gravada (Subtotal):</span><strong>S/ {Number(comp.montoSubtotal || 0).toFixed(2)}</strong></div>
+            <div><span>I.G.V. (18%):</span><strong>S/ {Number(comp.montoIgv || 0).toFixed(2)}</strong></div>
+            <div className="total-final"><span>IMPORTE TOTAL:</span><strong>S/ {Number(comp.montoTotal || 0).toFixed(2)}</strong></div>
+          </div>
+
+          <p className="ticket-pie" style={{ marginTop: '18px' }}>
+            Representación impresa de la {comp.tipoComprobante === 'FACTURA' ? 'Factura Electrónica' : 'Boleta de Venta Electrónica'}. Conserve este documento y su código de tracking ({comp.codigoTracking}) para el seguimiento y entrega de su encomienda.
+          </p>
+        </div>
+      );
+    })()}
+    {entregaAConfirmar && (() => {
+      const { encomienda, tipo } = entregaAConfirmar;
+      const destNombre = `${encomienda.destinatario?.nombres || ''} ${encomienda.destinatario?.apellidos || ''}`.trim() || 'No especificado';
+      const destDoc = encomienda.destinatario?.numDocumento || 'Sin documento';
+      return (
+        <div
+          className="no-print"
+          onClick={() => !llegadaConfirmando && setEntregaAConfirmar(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: '480px', backgroundColor: 'white', borderRadius: '10px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '16px', marginBottom: '16px' }}>
+              <div>
+                <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>
+                  Verificar DNI para {tipo === 'recojo' ? 'Recojo en Agencia' : 'Entrega a Domicilio'}
+                </h2>
+                <p style={{ margin: '6px 0 0', color: '#777', fontSize: '13px' }}>
+                  Encomienda <strong>{encomienda.codigoTracking}</strong> · {encomienda.descripcion || 'Carga'} ({encomienda.peso} Kg)
+                </p>
+              </div>
+              <button type="button" disabled={!!llegadaConfirmando} onClick={() => setEntregaAConfirmar(null)} style={{ border: 0, background: 'transparent', fontSize: '22px', color: '#666', cursor: 'pointer' }}>×</button>
+            </div>
+
+            <div style={{ padding: '12px 14px', backgroundColor: '#F8FAFC', borderRadius: '8px', border: '1px solid #E4E6EF', marginBottom: '16px', fontSize: '13px' }}>
+              <div><span style={{ color: '#6B7280' }}>Destinatario titular registrado:</span></div>
+              <div style={{ fontWeight: 700, color: '#1E1E2D', marginTop: '2px' }}>{destNombre} — Doc: {destDoc}</div>
+            </div>
+
+            <form onSubmit={ejecutarConfirmarEntrega} style={{ display: 'grid', gap: '14px' }}>
+              <div>
+                <label style={labelStyle}>DNI (8 dígitos) o RUC (11 dígitos) de quien recibe</label>
+                <input
+                  required
+                  maxLength={11}
+                  placeholder="Ingresa el DNI o RUC físico presentado"
+                  value={dniReceptor}
+                  onChange={e => void manejarDniEntrega(e.target.value, encomienda)}
+                  style={inputStyle}
+                />
+                {avisoDniEntrega && (
+                  <div style={{
+                    marginTop: '6px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    backgroundColor: avisoDniEntrega.ok ? '#E8F5E9' : '#FFF4E5',
+                    color: avisoDniEntrega.ok ? '#2E7D32' : '#B26A00',
+                  }}>
+                    {avisoDniEntrega.texto}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label style={labelStyle}>Nombre completo de quien recibe</label>
+                <input
+                  required
+                  maxLength={120}
+                  placeholder="Nombres y apellidos del receptor"
+                  value={nombreReceptor}
+                  onChange={e => setNombreReceptor(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                <button type="button" disabled={!!llegadaConfirmando} onClick={() => setEntregaAConfirmar(null)} style={btnLight}>
+                  Cancelar
+                </button>
+                <button type="submit" disabled={!!llegadaConfirmando} style={btnPrimary}>
+                  {llegadaConfirmando ? 'Confirmando...' : `Confirmar ${tipo === 'recojo' ? 'recojo' : 'entrega'}`}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      );
+    })()}
+    {manifiestoDetalle && (
+      <div
+        className="no-print"
+        onClick={() => !retirandoTracking && setManifiestoDetalle(null)}
+        style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          onClick={e => e.stopPropagation()}
+          style={{ width: '100%', maxWidth: '680px', maxHeight: '85vh', overflowY: 'auto', backgroundColor: 'white', borderRadius: '10px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '16px', marginBottom: '16px' }}>
+            <div>
+              <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>
+                Manifiesto N° {manifiestoDetalle.idManifiesto} · Bus {manifiestoDetalle.numBus}
+              </h2>
+              <p style={{ margin: '6px 0 0', color: '#777', fontSize: '13px' }}>
+                Ruta: <strong>{manifiestoDetalle.ruta}</strong> · Fecha: {manifiestoDetalle.fechaViaje} · Carga: <strong>{Number(manifiestoDetalle.pesoTotalCarga || 0).toFixed(2)} / {Number(manifiestoDetalle.capacidadKg || 0).toFixed(2)} Kg</strong>
+              </p>
+            </div>
+            <button type="button" onClick={() => setManifiestoDetalle(null)} style={{ border: 0, background: 'transparent', fontSize: '22px', color: '#666', cursor: 'pointer' }}>×</button>
+          </div>
+
+          {(!manifiestoDetalle.encomiendas || manifiestoDetalle.encomiendas.length === 0) ? (
+            <p style={{ color: '#777' }}>Este manifiesto no tiene encomiendas asignadas actualmente.</p>
+          ) : (
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Tracking</th>
+                  <th style={thStyle}>Descripción</th>
+                  <th style={thStyle}>Destinatario</th>
+                  <th style={thStyle}>Peso</th>
+                  <th style={thStyle}>Estado</th>
+                  <th style={thStyle}>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {manifiestoDetalle.encomiendas.map((item: any) => {
+                  const enTransito = (item.estadoLogistico || '').toLowerCase() === 'en tránsito';
+                  return (
+                    <tr key={item.codigoTracking} style={trStyle}>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: '#D32F2F' }}>{item.codigoTracking}</td>
+                      <td style={tdStyle}>{item.descripcion || '—'}</td>
+                      <td style={tdStyle}>{item.destinatario || '—'}</td>
+                      <td style={tdStyle}>{Number(item.peso || 0).toFixed(2)} Kg</td>
+                      <td style={tdStyle}>{etiquetaEstadoEncomienda(item.estadoLogistico)}</td>
+                      <td style={tdStyle}>
+                        {puede(rol, 'asignar_manifiesto') && enTransito ? (
+                          <button
+                            type="button"
+                            disabled={retirandoTracking === item.codigoTracking}
+                            onClick={() => void retirarEncomiendaDeManifiesto(item.codigoTracking, manifiestoDetalle.idManifiesto)}
+                            style={{ padding: '6px 10px', backgroundColor: '#FDECEC', color: '#B42318', border: '1px solid #F5C2C0', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                          >
+                            {retirandoTracking === item.codigoTracking ? 'Retirando...' : 'Retirar del bus'}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '12px', color: '#888' }}>Ya recepcionado</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+            <button type="button" onClick={() => setManifiestoDetalle(null)} style={btnSecondary}>Cerrar</button>
+          </div>
+        </section>
+      </div>
+    )}
     {confirmarEdicionManifiesto && (
       <ConfirmacionModal
         titulo="Confirmar cambios del manifiesto"
@@ -1599,7 +2617,7 @@ export default function Dashboard() {
         </label>
       </ConfirmacionModal>
     )}
-    {!manifiestoImprimir && (encomiendaImprimir || encomiendaConsultada || resumenRegistrado) && (() => {
+    {!manifiestoImprimir && !comprobanteImprimir && !comprobanteVista && (encomiendaImprimir || encomiendaConsultada || resumenRegistrado) && (() => {
       const reporte = encomiendaImprimir || (vistaActual === 'lista_encomiendas' ? encomiendaConsultada : (resumenRegistrado || encomiendaConsultada));
       if (!reporte) return null;
 
