@@ -17,6 +17,9 @@ public class Comprobante {
     @Column(name = "id_comprobante")
     private Long idComprobante;
 
+    @Column(name = "numero_serie", length = 30)
+    private String numeroSerie;
+
     @Column(name = "tipo_comprobante", length = 50)
     private String tipoComprobante;
 

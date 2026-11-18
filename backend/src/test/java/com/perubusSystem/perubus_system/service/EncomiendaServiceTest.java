@@ -165,4 +165,55 @@ class EncomiendaServiceTest {
 
         assertThat(resultado.getEstadoLogistico()).isEqualTo("Llegó a agencia de destino");
     }
+
+    @Test
+    void simularPagoEmiteBoletaParaDniYFacturaParaRuc() {
+        ComprobanteRepository comprobanteRepo = mock(ComprobanteRepository.class);
+        ReflectionTestUtils.setField(service, "comprobanteRepository", comprobanteRepo);
+        when(comprobanteRepo.save(any())).thenAnswer(inv -> {
+            com.perubusSystem.perubus_system.model.Comprobante c = inv.getArgument(0);
+            if (c.getIdComprobante() == null) {
+                c.setIdComprobante(15L);
+            }
+            return c;
+        });
+
+        com.perubusSystem.perubus_system.model.Cliente remitente = new com.perubusSystem.perubus_system.model.Cliente();
+        remitente.setNumDocumento("12345678");
+        encomienda.setRemitente(remitente);
+        encomienda.setTarifaBase(20.0);
+        encomienda.setEstadoLogistico(EncomiendaService.ESTADO_PENDIENTE_PAGO);
+
+        var boleta = service.simularPago("PERU-ABCDEFGH");
+        assertThat(boleta.getTipoComprobante()).isEqualTo("BOLETA");
+        assertThat(boleta.getNumeroSerie()).isEqualTo("B001-000015");
+        assertThat(boleta.getMontoSubtotal()).isEqualByComparingTo("20.00");
+        assertThat(boleta.getMontoIgv()).isEqualByComparingTo("3.60");
+        assertThat(boleta.getMontoTotal()).isEqualByComparingTo("23.60");
+
+        // Rechaza factura si el cliente solo tiene DNI
+        encomienda.setEstadoLogistico(EncomiendaService.ESTADO_PENDIENTE_PAGO);
+        assertThatThrownBy(() -> service.simularPago("PERU-ABCDEFGH", "FACTURA"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("RUC de 11 dígitos");
+
+        // Emite factura automáticamente si el documento es RUC de 11 dígitos
+        remitente.setNumDocumento("20100070970");
+        var factura = service.simularPago("PERU-ABCDEFGH", null);
+        assertThat(factura.getTipoComprobante()).isEqualTo("FACTURA");
+        assertThat(factura.getNumeroSerie()).isEqualTo("F001-000015");
+    }
+
+    @Test
+    void confirmarEntregaValidaDniDelReceptor() {
+        encomienda.setEstadoLogistico("Disponible para recojo");
+        when(encomiendaRepository.save(any(Encomienda.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThatThrownBy(() -> service.confirmarEntrega("PERU-ABCDEFGH", 5L, "Rosa Aybar", "123"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("DNI válido");
+
+        Encomienda entregada = service.confirmarEntrega("PERU-ABCDEFGH", 5L, "Rosa Aybar", "45678912");
+        assertThat(entregada.getEstadoLogistico()).isEqualTo("Recogido");
+    }
 }

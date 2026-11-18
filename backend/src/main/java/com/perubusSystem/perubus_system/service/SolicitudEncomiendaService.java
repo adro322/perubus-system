@@ -309,6 +309,7 @@ public class SolicitudEncomiendaService {
         solicitud.setRespuesta("Pago adicional simulado y confirmado.");
         encomienda.setEstadoLogistico(EncomiendaService.ESTADO_EN_ORIGEN);
         encomiendaRepository.save(encomienda);
+        encomiendaService.actualizarComprobantePorBulto(encomienda);
         registrarEvento(encomienda, "Pago adicional simulado confirmado por el bulto '"
                 + solicitud.getDescripcionBulto() + "'. El envío puede asignarse a un manifiesto.", null);
         return SolicitudEncomiendaRespuesta.desde(solicitudRepository.save(solicitud));
