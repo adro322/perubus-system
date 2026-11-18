@@ -209,4 +209,34 @@ class ManifiestoServiceTest {
                 .hasMessageContaining("1 encomienda(s) asignada(s)");
         verify(manifiestoRepository, never()).delete(manifiesto);
     }
+
+    @Test
+    void retiraEncomiendaEnTransitoYDevuelveAEnOrigen() {
+        Encomienda e = encomienda("PERU-AAAAAA05", 25.0, "En tránsito");
+        e.setManifiesto(manifiesto);
+        asignadas.add(e);
+        when(encomiendaRepository.save(e)).thenAnswer(inv -> {
+            asignadas.remove(e);
+            return e;
+        });
+
+        var respuesta = service.retirarEncomienda(1L, "peru-aaaaaa05");
+
+        assertThat(e.getManifiesto()).isNull();
+        assertThat(e.getEstadoLogistico()).isEqualTo("En origen");
+        assertThat(manifiesto.getPesoTotalCarga()).isZero();
+        assertThat(respuesta.encomiendas()).isEmpty();
+        verify(eventoTrackingRepository).save(any());
+    }
+
+    @Test
+    void rechazaRetirarEncomiendaSiYaLlegoADestino() {
+        Encomienda e = encomienda("PERU-AAAAAA06", 25.0, "Llegó a agencia de destino");
+        e.setManifiesto(manifiesto);
+        asignadas.add(e);
+
+        assertThatThrownBy(() -> service.retirarEncomienda(1L, "PERU-AAAAAA06"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("En tránsito");
+    }
 }

@@ -141,6 +141,56 @@ public class ManifiestoService {
         return aRespuesta(manifiesto);
     }
 
+    @Transactional
+    public ManifiestoRespuesta retirarEncomienda(Long id, String codigoTracking) {
+        if (codigoTracking == null || codigoTracking.isBlank()) {
+            throw new IllegalArgumentException("Debe indicar el código de tracking de la encomienda.");
+        }
+        Manifiesto manifiesto = buscar(id);
+        String codigo = codigoTracking.trim().toUpperCase(Locale.ROOT);
+        Encomienda encomienda = encomiendaRepository.findByCodigoTracking(codigo)
+                .orElseThrow(() -> new NoSuchElementException("No existe la encomienda " + codigo + "."));
+
+        if (encomienda.getManifiesto() == null
+                || !manifiesto.getIdManifiesto().equals(encomienda.getManifiesto().getIdManifiesto())) {
+            throw new IllegalStateException("La encomienda " + codigo + " no está asignada a este manifiesto.");
+        }
+        if (!ESTADO_EN_TRANSITO.equalsIgnoreCase(encomienda.getEstadoLogistico())) {
+            throw new IllegalStateException("Solo se puede retirar del manifiesto una encomienda en estado '"
+                    + ESTADO_EN_TRANSITO + "' (estado actual: " + encomienda.getEstadoLogistico() + ").");
+        }
+
+        encomienda.setManifiesto(null);
+        encomienda.setEstadoLogistico(ESTADO_ASIGNABLE);
+        encomiendaRepository.save(encomienda);
+
+        EventoTracking evento = new EventoTracking();
+        evento.setEncomienda(encomienda);
+        evento.setEstado(ESTADO_ASIGNABLE);
+        evento.setDetalle("Encomienda retirada del manifiesto del bus " + manifiesto.getNumBus()
+                + " y devuelta a origen.");
+        eventoTrackingRepository.save(evento);
+
+        double nuevoPeso = pesoActual(manifiesto);
+        manifiesto.setPesoTotalCarga(nuevoPeso);
+        manifiestoRepository.save(manifiesto);
+        return aRespuesta(manifiesto);
+    }
+
+    @Transactional
+    public ManifiestoRespuesta retirarPorTracking(String codigoTracking) {
+        if (codigoTracking == null || codigoTracking.isBlank()) {
+            throw new IllegalArgumentException("Debe indicar el código de tracking de la encomienda.");
+        }
+        String codigo = codigoTracking.trim().toUpperCase(Locale.ROOT);
+        Encomienda encomienda = encomiendaRepository.findByCodigoTracking(codigo)
+                .orElseThrow(() -> new NoSuchElementException("No existe la encomienda " + codigo + "."));
+        if (encomienda.getManifiesto() == null || encomienda.getManifiesto().getIdManifiesto() == null) {
+            throw new IllegalStateException("La encomienda " + codigo + " no tiene un manifiesto asignado.");
+        }
+        return retirarEncomienda(encomienda.getManifiesto().getIdManifiesto(), codigo);
+    }
+
     // La encomienda solo puede viajar en un bus de su misma ruta (ej. Lima-Ica)
     private void validarRuta(Encomienda e, Manifiesto m) {
         String rutaEncomienda = e.getRuta() == null ? "" : e.getRuta().trim();

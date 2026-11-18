@@ -90,6 +90,34 @@ public class ManifiestoController {
         }
     }
 
+    @RequiereRol(Rol.OPERARIO)
+    @DeleteMapping("/{id}/encomiendas/{codigoTracking}")
+    public ResponseEntity<?> retirar(@PathVariable Long id, @PathVariable String codigoTracking) {
+        try {
+            return ResponseEntity.ok(manifiestoService.retirarEncomienda(id, codigoTracking));
+        } catch (NoSuchElementException e) {
+            return error(HttpStatus.NOT_FOUND, e);
+        } catch (IllegalArgumentException e) {
+            return error(HttpStatus.BAD_REQUEST, e);
+        } catch (IllegalStateException e) {
+            return error(HttpStatus.CONFLICT, e);
+        }
+    }
+
+    @RequiereRol(Rol.OPERARIO)
+    @DeleteMapping("/encomiendas/{codigoTracking}")
+    public ResponseEntity<?> retirarPorTracking(@PathVariable String codigoTracking) {
+        try {
+            return ResponseEntity.ok(manifiestoService.retirarPorTracking(codigoTracking));
+        } catch (NoSuchElementException e) {
+            return error(HttpStatus.NOT_FOUND, e);
+        } catch (IllegalArgumentException e) {
+            return error(HttpStatus.BAD_REQUEST, e);
+        } catch (IllegalStateException e) {
+            return error(HttpStatus.CONFLICT, e);
+        }
+    }
+
     private ResponseEntity<?> error(HttpStatus status, Exception e) {
         return ResponseEntity.status(status).body(Map.of("mensaje", e.getMessage()));
     }
