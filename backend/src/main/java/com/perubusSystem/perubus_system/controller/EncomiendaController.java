@@ -98,21 +98,32 @@ public class EncomiendaController {
 
     @RequiereRol(Rol.AGENTE)
     @PostMapping("/{codigoTracking}/simular-pago")
-    public ResponseEntity<?> simularPago(@PathVariable String codigoTracking) {
+    public ResponseEntity<?> simularPago(
+            @PathVariable String codigoTracking,
+            @RequestBody(required = false) Map<String, String> datos) {
         try {
-            var comprobante = encomiendaService.simularPago(codigoTracking.trim().toUpperCase(Locale.ROOT));
+            String tipoSolicitado = datos == null ? null : datos.get("tipoComprobante");
+            var comprobante = encomiendaService.simularPago(
+                    codigoTracking.trim().toUpperCase(Locale.ROOT),
+                    tipoSolicitado);
+            var respuestaComprobante = com.perubusSystem.perubus_system.dto.ComprobanteRespuesta.desde(comprobante);
             return ResponseEntity.ok(Map.of(
                     "codigoTracking", comprobante.getEncomienda().getCodigoTracking(),
                     "estadoLogistico", comprobante.getEncomienda().getEstadoLogistico(),
                     "estadoPago", comprobante.getEstadoPago(),
+                    "tipoComprobante", respuestaComprobante.tipoComprobante(),
+                    "numeroSerie", respuestaComprobante.numeroSerie(),
                     "subtotal", comprobante.getMontoSubtotal(),
                     "igv", comprobante.getMontoIgv(),
                     "total", comprobante.getMontoTotal(),
+                    "fechaEmision", respuestaComprobante.fechaEmision(),
                     "fechaPago", comprobante.getFechaPago()));
         } catch (NoSuchElementException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
         } catch (IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("mensaje", e.getMessage()));
         }
     }
 
@@ -197,9 +208,15 @@ public class EncomiendaController {
                     .body(Map.of("mensaje", "Inicia sesión como personal para confirmar la entrega."));
         }
         try {
+            if (solicitud == null || solicitud.dniReceptor() == null || solicitud.dniReceptor().isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("mensaje", "El DNI o RUC de la persona que recibe es obligatorio para verificar la entrega."));
+            }
             Encomienda encomienda = encomiendaService.confirmarEntrega(
-                    codigoTracking.trim().toUpperCase(Locale.ROOT), id,
-                    solicitud == null ? null : solicitud.recibidoPor());
+                    codigoTracking.trim().toUpperCase(Locale.ROOT),
+                    id,
+                    solicitud.recibidoPor(),
+                    solicitud.dniReceptor());
             return ResponseEntity.ok(Map.of(
                     "codigoTracking", encomienda.getCodigoTracking(),
                     "estadoLogistico", encomienda.getEstadoLogistico()));

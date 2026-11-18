@@ -273,6 +273,50 @@ public class PortalClienteController {
         return ResponseEntity.ok(respuesta);
     }
 
+    @GetMapping("/encomiendas/{codigoTracking}/comprobante")
+    @Transactional(readOnly = true)
+    public ResponseEntity<?> obtenerComprobante(
+            @PathVariable String codigoTracking,
+            HttpSession session) {
+        Cliente cliente = clienteAutenticado(session);
+        if (cliente == null) {
+            return error(HttpStatus.UNAUTHORIZED, "Inicia sesión para continuar.");
+        }
+        String tracking = codigoTracking == null ? "" : codigoTracking.trim().toUpperCase(Locale.ROOT);
+        Optional<Encomienda> encOpt = encomiendaRepository.findByCodigoTracking(tracking);
+        if (encOpt.isEmpty()) {
+            return error(HttpStatus.NOT_FOUND, "No se encontró la encomienda.");
+        }
+        Encomienda encomienda = encOpt.get();
+        boolean autorizado = (encomienda.getRemitente() != null
+                && cliente.getIdCliente().equals(encomienda.getRemitente().getIdCliente()))
+                || (encomienda.getDestinatario() != null
+                        && cliente.getIdCliente().equals(encomienda.getDestinatario().getIdCliente()));
+        if (!autorizado) {
+            return error(HttpStatus.FORBIDDEN, "No tienes acceso al comprobante de este envío.");
+        }
+        String estado = encomienda.getEstadoLogistico() == null ? "" : encomienda.getEstadoLogistico();
+        if ("Pendiente de Pago".equalsIgnoreCase(estado) || "Cancelado".equalsIgnoreCase(estado)) {
+            return error(HttpStatus.CONFLICT, "Este envío aún no tiene un comprobante de pago emitido.");
+        }
+        java.math.BigDecimal subtotal = java.math.BigDecimal
+                .valueOf(encomienda.getTarifaBase() == null ? 0.0 : encomienda.getTarifaBase())
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        java.math.BigDecimal igv = subtotal.multiply(new java.math.BigDecimal("0.18"))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        java.math.BigDecimal total = subtotal.add(igv);
+        com.perubusSystem.perubus_system.model.Comprobante virtual = new com.perubusSystem.perubus_system.model.Comprobante();
+        virtual.setIdComprobante(encomienda.getIdEncomienda());
+        virtual.setEncomienda(encomienda);
+        virtual.setEstadoPago("SIMULADO");
+        virtual.setMontoSubtotal(subtotal);
+        virtual.setMontoIgv(igv);
+        virtual.setMontoTotal(total);
+        virtual.setFechaEmision(encomienda.getFechaRegistro());
+        virtual.setFechaPago(encomienda.getFechaRegistro());
+        return ResponseEntity.ok(ComprobanteRespuesta.desde(virtual));
+    }
+
     private PortalEncomiendaRespuesta convertir(Encomienda encomienda, Long clienteId) {
         List<EventoTrackingRespuesta> historial = eventoTrackingRepository
                 .findByEncomienda_IdEncomiendaOrderByFechaAsc(encomienda.getIdEncomienda())

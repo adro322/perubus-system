@@ -128,6 +128,16 @@ export default function PortalCliente() {
   const [aviso, setAviso] = useState('');
   const [cargando, setCargando] = useState(true);
   const [enviando, setEnviando] = useState(false);
+  const [comprobantePortal, setComprobantePortal] = useState<any>(null);
+
+  const verComprobantePortal = async (codigoTracking: string) => {
+    try {
+      const res = await api.get(`/encomiendas/${encodeURIComponent(codigoTracking)}/comprobante`);
+      setComprobantePortal(res.data);
+    } catch (err) {
+      setError(mensajeError(err, 'No se pudo obtener el comprobante de pago.'));
+    }
+  };
 
   const cargarSesion = async () => {
     const respuesta = await api.get<ClientePortal>('/sesion');
@@ -566,6 +576,17 @@ export default function PortalCliente() {
                               <p><span>Viaje</span>{envio.fechaViaje || 'Por asignar'}</p>
                               <p><span>Bus</span>{envio.numeroBus || 'Por asignar'}</p>
                             </div>
+                            {envio.estadoActual !== 'Pendiente de Pago' && envio.estadoActual !== 'Cancelado' && (
+                              <div style={{ marginTop: '12px' }}>
+                                <button
+                                  type="button"
+                                  className="portal-refresh"
+                                  onClick={() => void verComprobantePortal(envio.codigoTracking)}
+                                >
+                                  Ver comprobante electrónico (Boleta / Factura)
+                                </button>
+                              </div>
+                            )}
                             {envio.bultos?.length > 0 && (
                               <div className="shipment-parcels">
                                 <h3>Bultos del envío</h3>
@@ -917,6 +938,99 @@ export default function PortalCliente() {
           onCancelar={() => setPagoBultoAConfirmar(null)}
           onConfirmar={() => void pagarBulto(pagoBultoAConfirmar)}
         />
+      )}
+      {comprobantePortal && (
+        <>
+          <div
+            className="no-print"
+            onClick={() => setComprobantePortal(null)}
+            style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}
+          >
+            <section
+              role="dialog"
+              aria-modal="true"
+              onClick={(e) => e.stopPropagation()}
+              style={{ width: '100%', maxWidth: '500px', backgroundColor: 'white', borderRadius: '12px', padding: '26px', color: '#1b2e49', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', borderBottom: '2px solid #102b50', paddingBottom: '12px', marginBottom: '14px' }}>
+                <div>
+                  <strong style={{ fontSize: '17px', color: '#102b50' }}>PERUBUS CARGO S.A.C.</strong>
+                  <div style={{ fontSize: '12px', color: '#647895' }}>RUC: 20100070970</div>
+                </div>
+                <div style={{ border: '1px solid #d71935', borderRadius: '6px', padding: '6px 10px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 800, color: '#d71935' }}>
+                    {comprobantePortal.tipoComprobante === 'FACTURA' ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA ELECTRÓNICA'}
+                  </div>
+                  <div style={{ fontSize: '14px', fontWeight: 800, fontFamily: 'monospace' }}>{comprobantePortal.numeroSerie}</div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gap: '6px', fontSize: '13px', marginBottom: '14px' }}>
+                <div><strong>Cliente:</strong> {comprobantePortal.clienteNombre} ({comprobantePortal.clienteDocumento})</div>
+                <div><strong>Tracking:</strong> {comprobantePortal.codigoTracking} · <strong>Ruta:</strong> {comprobantePortal.ruta || '—'}</div>
+                <div><strong>Descripción:</strong> {comprobantePortal.descripcionEncomienda || 'Encomienda'} ({comprobantePortal.pesoTotal ?? '—'} Kg)</div>
+              </div>
+              <div style={{ borderTop: '1px solid #e1e8f1', paddingTop: '10px', display: 'grid', gap: '6px', fontSize: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Op. Gravada (Subtotal)</span><strong>S/ {Number(comprobantePortal.montoSubtotal || 0).toFixed(2)}</strong></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>IGV (18%)</span><strong>S/ {Number(comprobantePortal.montoIgv || 0).toFixed(2)}</strong></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '17px', color: '#d71935' }}><strong>Importe Total</strong><strong>S/ {Number(comprobantePortal.montoTotal || 0).toFixed(2)}</strong></div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '18px' }}>
+                <button type="button" className="portal-refresh" onClick={() => setComprobantePortal(null)}>Cerrar</button>
+                <button type="button" className="portal-submit" style={{ width: 'auto', padding: '10px 18px' }} onClick={() => window.print()}>Imprimir / PDF</button>
+              </div>
+            </section>
+          </div>
+          <div className="comprobante-impresion">
+            <div className="comprobante-cabecera-doc">
+              <div className="comprobante-empresa">
+                <h1>PERUBUS CARGO S.A.C.</h1>
+                <p><strong>RUC:</strong> 20100070970</p>
+                <p><strong>Dirección Fiscal:</strong> Av. México 333, La Victoria — Lima, Perú</p>
+                <p><strong>Servicio:</strong> Transporte Interprovincial de Carga y Encomiendas</p>
+              </div>
+              <div className="comprobante-recuadro-sunat">
+                <div className="ruc">R.U.C. 20100070970</div>
+                <div className="tipo">
+                  {comprobantePortal.tipoComprobante === 'FACTURA' ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA ELECTRÓNICA'}
+                </div>
+                <div className="serie">{comprobantePortal.numeroSerie}</div>
+              </div>
+            </div>
+            <div className="comprobante-grid-datos">
+              <div><strong>Cliente / Razón Social:</strong> {comprobantePortal.clienteNombre || 'Cliente'}</div>
+              <div><strong>Fecha de Emisión:</strong> {comprobantePortal.fechaEmision ? new Date(comprobantePortal.fechaEmision).toLocaleString('es-PE') : new Date().toLocaleDateString('es-PE')}</div>
+              <div><strong>{comprobantePortal.tipoComprobante === 'FACTURA' ? 'RUC' : 'DNI / Documento'}:</strong> {comprobantePortal.clienteDocumento || '—'}</div>
+              <div><strong>Código de Tracking:</strong> {comprobantePortal.codigoTracking} ({comprobantePortal.ruta || '—'})</div>
+            </div>
+            <table className="comprobante-tabla">
+              <thead>
+                <tr>
+                  <th>Cant.</th>
+                  <th>Unidad</th>
+                  <th>Código</th>
+                  <th>Descripción del Servicio</th>
+                  <th>Peso</th>
+                  <th>Importe</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1</td>
+                  <td>ZZ</td>
+                  <td>{comprobantePortal.codigoTracking}</td>
+                  <td>Servicio de transporte de encomienda: {comprobantePortal.descripcionEncomienda || 'Carga general'}</td>
+                  <td>{Number(comprobantePortal.pesoTotal || 0).toFixed(2)} Kg</td>
+                  <td>S/ {Number(comprobantePortal.montoSubtotal || 0).toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
+            <div className="comprobante-totales">
+              <div><span>Op. Gravada (Subtotal):</span><strong>S/ {Number(comprobantePortal.montoSubtotal || 0).toFixed(2)}</strong></div>
+              <div><span>I.G.V. (18%):</span><strong>S/ {Number(comprobantePortal.montoIgv || 0).toFixed(2)}</strong></div>
+              <div className="total-final"><span>IMPORTE TOTAL:</span><strong>S/ {Number(comprobantePortal.montoTotal || 0).toFixed(2)}</strong></div>
+            </div>
+          </div>
+        </>
       )}
     </main>
   );

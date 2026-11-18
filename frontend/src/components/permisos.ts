@@ -25,8 +25,10 @@ export type Accion =
   | 'ver_manifiestos'
   | 'asignar_manifiesto'
   | 'crear_manifiestos'    // RF-07: solo ADMIN y SUPERVISOR
+  | 'gestionar_incidencias' // reporte y resolución de incidencias operativas
   | 'gestionar_clientes'   // CRUD de clientes
-  | 'gestionar_personal';  // CRUD de personal
+  | 'gestionar_personal'   // CRUD de personal
+  | 'ver_estadisticas';    // Panel de estadísticas y reportes: solo ADMIN y SUPERVISOR
 
 // Roles que pueden hacer cada acción, además de ADMIN y SUPERVISOR
 const PERMISOS: Record<Accion, Rol[]> = {
@@ -41,8 +43,10 @@ const PERMISOS: Record<Accion, Rol[]> = {
   ver_manifiestos: ['OPERARIO'],
   asignar_manifiesto: ['OPERARIO'],
   crear_manifiestos: [],
+  gestionar_incidencias: ['AGENTE', 'OPERARIO'],
   gestionar_clientes: [],
   gestionar_personal: [],
+  ver_estadisticas: [],
 };
 
 export const puede = (rol: string, accion: Accion): boolean => {
@@ -60,7 +64,9 @@ const VISTAS: [string, Accion][] = [
   ['accesos_portal', 'gestionar_acceso_portal'],
   ['lista_clientes', 'gestionar_clientes'],
   ['lista_manifiestos', 'ver_manifiestos'],
+  ['incidencias', 'gestionar_incidencias'],
   ['personal', 'gestionar_personal'],
+  ['estadisticas', 'ver_estadisticas'],
 ];
 
 export const vistaPermitida = (rol: string, vista: string): boolean => {

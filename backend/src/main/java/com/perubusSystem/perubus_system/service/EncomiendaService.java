@@ -144,11 +144,29 @@ public class EncomiendaService {
 
     @Transactional
     public Comprobante simularPago(String codigoTracking) {
+        return simularPago(codigoTracking, null);
+    }
+
+    @Transactional
+    public Comprobante simularPago(String codigoTracking, String tipoComprobanteSolicitado) {
         Encomienda encomienda = encomiendaRepository.findByCodigoTracking(codigoTracking)
                 .orElseThrow(() -> new NoSuchElementException("No se encontró la encomienda."));
 
         if (!ESTADO_PENDIENTE_PAGO.equalsIgnoreCase(encomienda.getEstadoLogistico())) {
             throw new IllegalStateException("La encomienda no está pendiente de pago.");
+        }
+
+        String docRemitente = encomienda.getRemitente() != null && encomienda.getRemitente().getNumDocumento() != null
+                ? encomienda.getRemitente().getNumDocumento().trim()
+                : "";
+        String tipo = (tipoComprobanteSolicitado == null || tipoComprobanteSolicitado.isBlank())
+                ? (docRemitente.length() == 11 ? "FACTURA" : "BOLETA")
+                : tipoComprobanteSolicitado.trim().toUpperCase();
+        if (!"BOLETA".equals(tipo) && !"FACTURA".equals(tipo)) {
+            throw new IllegalArgumentException("El tipo de comprobante debe ser BOLETA o FACTURA.");
+        }
+        if ("FACTURA".equals(tipo) && docRemitente.length() != 11) {
+            throw new IllegalArgumentException("Para emitir FACTURA el remitente debe tener un RUC de 11 dígitos.");
         }
 
         BigDecimal subtotal = BigDecimal.valueOf(encomienda.getTarifaBase())
@@ -158,20 +176,50 @@ public class EncomiendaService {
         BigDecimal total = subtotal.add(igv);
         LocalDateTime fechaPago = LocalDateTime.now();
 
-        Comprobante comprobante = new Comprobante();
+        Comprobante comprobante = encomienda.getIdEncomienda() == null
+                ? new Comprobante()
+                : comprobanteRepository.findByEncomienda_IdEncomienda(encomienda.getIdEncomienda())
+                        .orElseGet(Comprobante::new);
+        comprobante.setTipoComprobante(tipo);
         comprobante.setEstadoPago("SIMULADO");
         comprobante.setMontoSubtotal(subtotal);
         comprobante.setMontoIgv(igv);
         comprobante.setMontoTotal(total);
+        comprobante.setFechaEmision(fechaPago);
         comprobante.setFechaPago(fechaPago);
         comprobante.setEncomienda(encomienda);
 
-        comprobanteRepository.save(comprobante);
+        Comprobante guardado = comprobanteRepository.save(comprobante);
+        if (guardado != null && guardado.getIdComprobante() != null
+                && (guardado.getNumeroSerie() == null || guardado.getNumeroSerie().isBlank())) {
+            String prefijo = "FACTURA".equals(tipo) ? "F001-" : "B001-";
+            guardado.setNumeroSerie(prefijo + String.format("%06d", guardado.getIdComprobante()));
+            comprobanteRepository.save(guardado);
+        }
         encomienda.setEstadoLogistico(ESTADO_EN_ORIGEN);
         encomiendaRepository.save(encomienda);
-        registrarEvento(encomienda, "Pago confirmado. El envío se encuentra en origen.", null);
+        registrarEvento(encomienda, "Pago confirmado (" + tipo + "). El envío se encuentra en origen.", null);
 
-        return comprobante;
+        return guardado != null ? guardado : comprobante;
+    }
+
+    @Transactional
+    public void actualizarComprobantePorBulto(Encomienda encomienda) {
+        if (encomienda == null || encomienda.getIdEncomienda() == null || encomienda.getTarifaBase() == null) {
+            return;
+        }
+        comprobanteRepository.findByEncomienda_IdEncomienda(encomienda.getIdEncomienda()).ifPresent(comprobante -> {
+            BigDecimal subtotal = BigDecimal.valueOf(encomienda.getTarifaBase())
+                    .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal igv = subtotal.multiply(new BigDecimal("0.18"))
+                    .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal total = subtotal.add(igv);
+            comprobante.setMontoSubtotal(subtotal);
+            comprobante.setMontoIgv(igv);
+            comprobante.setMontoTotal(total);
+            comprobante.setFechaPago(LocalDateTime.now());
+            comprobanteRepository.save(comprobante);
+        });
     }
 
     @Transactional
@@ -222,9 +270,25 @@ public class EncomiendaService {
 
     @Transactional
     public Encomienda confirmarEntrega(String codigoTracking, Long usuarioId, String recibidoPor) {
+        return confirmarEntrega(codigoTracking, usuarioId, recibidoPor, null);
+    }
+
+    @Transactional
+    public Encomienda confirmarEntrega(
+            String codigoTracking,
+            Long usuarioId,
+            String recibidoPor,
+            String dniReceptor) {
         validarPersonal(usuarioId, "confirmar la entrega");
         if (recibidoPor == null || recibidoPor.isBlank() || recibidoPor.trim().length() > 120) {
             throw new IllegalArgumentException("Indica el nombre de la persona que recibe la encomienda (máximo 120 caracteres).");
+        }
+        String dniLimpio = null;
+        if (dniReceptor != null) {
+            dniLimpio = dniReceptor.trim();
+            if (!dniLimpio.matches("\\d{8}|\\d{11}")) {
+                throw new IllegalArgumentException("Ingresa un DNI válido (8 dígitos) o RUC (11 dígitos) de quien recibe la encomienda.");
+            }
         }
 
         Encomienda encomienda = buscarEncomienda(codigoTracking);
@@ -239,9 +303,20 @@ public class EncomiendaService {
                 || ESTADO_EN_AGENCIA_DESTINO.equalsIgnoreCase(estadoActual);
         encomienda.setEstadoLogistico(esRecojo ? ESTADO_RECOGIDO : ESTADO_ENTREGADO);
         encomiendaRepository.save(encomienda);
+
+        String docDestinatario = encomienda.getDestinatario() != null && encomienda.getDestinatario().getNumDocumento() != null
+                ? encomienda.getDestinatario().getNumDocumento().trim()
+                : "";
+        String infoDni = "";
+        if (dniLimpio != null) {
+            boolean esTitular = !docDestinatario.isEmpty() && docDestinatario.equals(dniLimpio);
+            infoDni = " (Doc. verificado: " + dniLimpio
+                    + (esTitular ? " · Destinatario titular" : " · Receptor identificado") + ")";
+        }
+
         registrarEvento(encomienda,
                 (esRecojo ? "Recojo" : "Entrega") + " confirmado por personal de PeruBus. Recibió: "
-                        + recibidoPor.trim() + ".",
+                        + recibidoPor.trim() + infoDni + ".",
                 null);
         return encomienda;
     }
