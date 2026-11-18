@@ -22,12 +22,31 @@ public class Incidencia {
     @Column(name = "descripcion", columnDefinition = "TEXT")
     private String descripcion;
 
+    @Column(name = "estado", length = 30)
+    private String estado;
+
+    @Column(name = "resolucion", columnDefinition = "TEXT")
+    private String resolucion;
+
     @Column(name = "fecha_reporte")
     private LocalDateTime fechaReporte;
+
+    @Column(name = "fecha_resolucion")
+    private LocalDateTime fechaResolucion;
 
     @ManyToOne
     @JoinColumn(name = "id_encomienda")
     private Encomienda encomienda;
+
+    @PrePersist
+    private void inicializar() {
+        if (fechaReporte == null) {
+            fechaReporte = LocalDateTime.now();
+        }
+        if (estado == null || estado.isBlank()) {
+            estado = "ABIERTA";
+        }
+    }
 
     public Incidencia() {
     }
