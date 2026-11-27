@@ -1,17 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import './Dashboard.css';
+import { etiquetaEstadoEncomienda } from './estadoEncomienda';
+import ConfirmacionModal from './ConfirmacionModal';
+import { puede, vistaInicial, vistaPermitida, ROLES, ETIQUETAS_ROL } from './permisos';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [usuarioId] = useState(() => Number(sessionStorage.getItem('idUsuario')));
-  const [vistaActual, setVistaActual] = useState('registro_encomienda'); 
+  const [rol] = useState(() => (sessionStorage.getItem('rol') || '').toUpperCase());
+  const [vistaActual, setVistaActual] = useState(() => vistaInicial((sessionStorage.getItem('rol') || '').toUpperCase()));
+  const [pestanaNotificaciones, setPestanaNotificaciones] = useState<'solicitudes' | 'bultos'>('solicitudes');
   const [mensaje, setMensaje] = useState('');
 
   // Estados Cliente
   const [clienteForm, setClienteForm] = useState({ numDocumento: '', nombres: '', apellidos: '', telefono: '', correo: '' });
-  const [listaClientes, setListaClientes] = useState([]);
+  const [listaClientes, setListaClientes] = useState<any[]>([]);
   
   // Estados Encomienda
   const [dniBuscado, setDniBuscado] = useState('');
@@ -23,6 +28,7 @@ export default function Dashboard() {
   const [listaEncomiendas, setListaEncomiendas] = useState<any[]>([]);
   const [pagoSeleccionado, setPagoSeleccionado] = useState<any>(null);
   const [pagoProcesando, setPagoProcesando] = useState(false);
+  const [llegadaConfirmando, setLlegadaConfirmando] = useState('');
   const [trackingBuscado, setTrackingBuscado] = useState('');
   const [encomiendaConsultada, setEncomiendaConsultada] = useState<any>(null);
   const [resumenRegistrado, setResumenRegistrado] = useState<any>(null);
@@ -32,21 +38,232 @@ export default function Dashboard() {
   const [descripcion, setDescripcion] = useState('');
   const [avisoDocumento, setAvisoDocumento] = useState<{ vista: string; texto: string; ok: boolean } | null>(null);
   const [listaManifiestos, setListaManifiestos] = useState<any[]>([]);
+  const [solicitudesPendientes, setSolicitudesPendientes] = useState<any[]>([]);
   const [manifiestoForm, setManifiestoForm] = useState({ numBus: '', ruta: '', fechaViaje: '', capacidadKg: '' });
+  const [listaPersonal, setListaPersonal] = useState<any[]>([]);
+  const [personalForm, setPersonalForm] = useState({ username: '', password: '', rol: 'AGENTE' });
+  const [personalEditando, setPersonalEditando] = useState<number | null>(null);
+  const [clienteEditando, setClienteEditando] = useState<any>(null);
+  const [crearAccesoAlRegistrar, setCrearAccesoAlRegistrar] = useState(true);
+  const [docAcceso, setDocAcceso] = useState('');
+  const [clienteAcceso, setClienteAcceso] = useState<any>(null);
+  const [errorAcceso, setErrorAcceso] = useState('');
+  const [credenciales, setCredenciales] = useState<any>(null);
+  const [accesoProcesando, setAccesoProcesando] = useState(false);
+  const [manifiestoEditando, setManifiestoEditando] = useState<number | null>(null);
+  const [confirmarEdicionManifiesto, setConfirmarEdicionManifiesto] = useState(false);
+  const [manifiestoAEliminar, setManifiestoAEliminar] = useState<any>(null);
+  const [solicitudAResolver, setSolicitudAResolver] = useState<{ solicitud: any; aprobar: boolean } | null>(null);
+  const [comentarioResolucion, setComentarioResolucion] = useState('');
+  const [confirmacionProcesando, setConfirmacionProcesando] = useState(false);
   const [encomiendaAAsignar, setEncomiendaAAsignar] = useState<any>(null);
   const [manifiestoElegido, setManifiestoElegido] = useState('');
   const [asignando, setAsignando] = useState(false);
   const [manifiestoImprimir, setManifiestoImprimir] = useState<any>(null);
   const [encomiendaImprimir, setEncomiendaImprimir] = useState<any>(null);
 
+  // Estados Comprobantes (Boleta / Factura)
+  const [tipoComprobantePago, setTipoComprobantePago] = useState<'BOLETA' | 'FACTURA'>('BOLETA');
+  const [comprobanteVista, setComprobanteVista] = useState<any>(null);
+  const [comprobanteImprimir, setComprobanteImprimir] = useState<any>(null);
+  const [comprobanteCargando, setComprobanteCargando] = useState('');
+
+  // Estados Incidencias
+  const [listaIncidencias, setListaIncidencias] = useState<any[]>([]);
+  const [filtroIncidencias, setFiltroIncidencias] = useState<'TODAS' | 'ABIERTA' | 'RESUELTA'>('TODAS');
+  const [incidenciaForm, setIncidenciaForm] = useState({
+    codigoTracking: '',
+    tipoProblema: 'Retraso en ruta',
+    descripcion: '',
+  });
+  const [incidenciaEnviando, setIncidenciaEnviando] = useState(false);
+  const [incidenciaAResolver, setIncidenciaAResolver] = useState<any>(null);
+  const [resolucionTexto, setResolucionTexto] = useState('');
+
+  // Estados Estadísticas / Reportes
+  const [estadisticas, setEstadisticas] = useState<any>(null);
+  const [estadisticasCargando, setEstadisticasCargando] = useState(false);
+
+  // Estados Verificación de Entrega con DNI y Retiro de Manifiesto
+  const [entregaAConfirmar, setEntregaAConfirmar] = useState<{ encomienda: any; tipo: 'recojo' | 'entrega' } | null>(null);
+  const [dniReceptor, setDniReceptor] = useState('');
+  const [nombreReceptor, setNombreReceptor] = useState('');
+  const [avisoDniEntrega, setAvisoDniEntrega] = useState<{ ok: boolean; texto: string } | null>(null);
+  const [manifiestoDetalle, setManifiestoDetalle] = useState<any>(null);
+  const [retirandoTracking, setRetirandoTracking] = useState('');
+
   useEffect(() => {
+    if (!usuarioId || !rol) {
+      navigate('/');
+      return;
+    }
+    if (!vistaPermitida(rol, vistaActual)) {
+      setVistaActual(vistaInicial(rol));
+    }
+  }, [rol, usuarioId, vistaActual, navigate]);
+
+  useEffect(() => {
+    if (vistaActual === 'personal') cargarPersonal();
     if (vistaActual === 'lista_clientes') cargarClientes();
-    if (vistaActual === 'lista_encomiendas') cargarEncomiendas();
+    if (vistaActual === 'lista_encomiendas') {
+      cargarEncomiendas();
+    }
+    if (vistaActual === 'notificaciones') {
+      cargarSolicitudesPendientes();
+    }
     if (vistaActual === 'lista_manifiestos') {
       cargarManifiestos();
       cargarEncomiendas();
     }
+    if (vistaActual === 'incidencias') {
+      cargarIncidencias();
+    }
+    if (vistaActual === 'estadisticas') {
+      cargarEstadisticas();
+    }
   }, [vistaActual]);
+
+  const cerrarSesion = async () => {
+    try {
+      await axios.post('http://localhost:8080/api/usuarios/salir');
+    } catch (error) { /* si falla igual se cierra la sesión local */ }
+    sessionStorage.removeItem('idUsuario');
+    sessionStorage.removeItem('rol');
+    navigate('/');
+  };
+
+  const mensajeDeError = (error: any, porDefecto: string) =>
+    error?.response?.data?.mensaje || porDefecto;
+
+  // ----- Personal (solo ADMIN / SUPERVISOR) -----
+  const cargarPersonal = async () => {
+    try {
+      const res = await axios.get('http://localhost:8080/api/usuarios');
+      setListaPersonal(res.data);
+    } catch (error) { console.error('Error al cargar el personal'); }
+  };
+
+  const guardarPersonal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (personalEditando === null) {
+        await axios.post('http://localhost:8080/api/usuarios/registrar', personalForm);
+        mostrarMensaje('Empleado registrado exitosamente');
+      } else {
+        await axios.put(`http://localhost:8080/api/usuarios/${personalEditando}`, {
+          username: personalForm.username,
+          rol: personalForm.rol
+        });
+        mostrarMensaje('Empleado actualizado');
+      }
+      setPersonalForm({ username: '', password: '', rol: 'AGENTE' });
+      setPersonalEditando(null);
+      cargarPersonal();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo guardar al empleado'));
+    }
+  };
+
+  const editarPersonal = (u: any) => {
+    setPersonalEditando(u.idUsuario);
+    setPersonalForm({ username: u.username, password: '', rol: u.rol });
+  };
+
+  const cambiarEstadoPersonal = async (u: any) => {
+    try {
+      await axios.put(`http://localhost:8080/api/usuarios/${u.idUsuario}`, { estado: !u.estado });
+      cargarPersonal();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo cambiar el estado'));
+    }
+  };
+
+  const eliminarPersonal = async (u: any) => {
+    if (!window.confirm(`¿Eliminar al empleado ${u.username}? Esta acción no se puede deshacer.`)) return;
+    try {
+      await axios.delete(`http://localhost:8080/api/usuarios/${u.idUsuario}`);
+      mostrarMensaje('Empleado eliminado');
+      cargarPersonal();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo eliminar al empleado'));
+    }
+  };
+
+  // ----- Edición y baja de clientes (solo ADMIN / SUPERVISOR) -----
+  const guardarCliente = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clienteEditando) return;
+    try {
+      await axios.put(`http://localhost:8080/api/clientes/${clienteEditando.idCliente}`, {
+        nombres: clienteEditando.nombres,
+        apellidos: clienteEditando.apellidos,
+        telefono: clienteEditando.telefono,
+        correo: clienteEditando.correo
+      });
+      mostrarMensaje('Cliente actualizado');
+      setClienteEditando(null);
+      cargarClientes();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo actualizar el cliente'));
+    }
+  };
+
+  // ----- Cuentas del portal de clientes -----
+  const actualizarCuentaLocal = (idCliente: number, estado: string) => {
+    setListaClientes(actual => actual.map(c => c.idCliente === idCliente ? { ...c, cuentaPortal: estado } : c));
+    setClienteAcceso((actual: any) => actual && actual.idCliente === idCliente ? { ...actual, cuentaPortal: estado } : actual);
+  };
+
+  const generarAccesoPortal = async (c: any) => {
+    const restablece = c.cuentaPortal && c.cuentaPortal !== 'SIN_CUENTA';
+    if (restablece && !window.confirm(`¿Restablecer la clave de ${c.nombres}? La clave actual dejará de funcionar.`)) return;
+    setAccesoProcesando(true);
+    try {
+      const res = await axios.post(`http://localhost:8080/api/clientes/${c.idCliente}/acceso`);
+      setCredenciales(res.data);
+      actualizarCuentaLocal(c.idCliente, 'CLAVE_TEMPORAL');
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo generar el acceso'));
+    } finally {
+      setAccesoProcesando(false);
+    }
+  };
+
+  const cambiarBloqueoCuenta = async (c: any, bloqueado: boolean) => {
+    if (bloqueado && !window.confirm(`¿Bloquear la cuenta del portal de ${c.nombres}? No podrá ingresar hasta que se desbloquee.`)) return;
+    try {
+      const res = await axios.put(`http://localhost:8080/api/clientes/${c.idCliente}/bloqueo`, { bloqueado });
+      actualizarCuentaLocal(c.idCliente, res.data.cuentaPortal);
+      mostrarMensaje(bloqueado ? 'Cuenta bloqueada' : 'Cuenta desbloqueada');
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo cambiar el bloqueo'));
+    }
+  };
+
+  const buscarClienteAcceso = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorAcceso('');
+    setClienteAcceso(null);
+    try {
+      const res = await axios.get(`http://localhost:8080/api/clientes/buscar/${docAcceso}`);
+      setClienteAcceso(res.data);
+    } catch (error: any) {
+      setErrorAcceso(error.response?.status === 404
+        ? 'No hay un cliente registrado con ese documento. Regístralo primero en "Nuevo Cliente".'
+        : 'Ingresa un DNI (8 dígitos) o un RUC (11 dígitos).');
+    }
+  };
+
+  const eliminarCliente = async (c: any) => {
+    if (!window.confirm(`¿Eliminar al cliente ${c.nombres} ${c.apellidos || ''}? Esta acción no se puede deshacer.`)) return;
+    try {
+      await axios.delete(`http://localhost:8080/api/clientes/${c.idCliente}`);
+      mostrarMensaje('Cliente eliminado');
+      cargarClientes();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo eliminar el cliente'));
+    }
+  };
 
   const cargarClientes = async () => {
     try {
@@ -62,22 +279,355 @@ export default function Dashboard() {
     } catch (error) { console.error("Error al cargar encomiendas"); }
   };
 
+  const abrirModalPago = (encomienda: any) => {
+    const doc = encomienda?.remitente?.numDocumento || '';
+    setTipoComprobantePago(doc.length === 11 ? 'FACTURA' : 'BOLETA');
+    setPagoSeleccionado(encomienda);
+  };
+
   const confirmarPago = async () => {
     if (!pagoSeleccionado || pagoProcesando) return;
     setPagoProcesando(true);
     try {
-      const res = await axios.post(`http://localhost:8080/api/encomiendas/${encodeURIComponent(pagoSeleccionado.codigoTracking)}/simular-pago`);
+      const res = await axios.post(
+        `http://localhost:8080/api/encomiendas/${encodeURIComponent(pagoSeleccionado.codigoTracking)}/simular-pago`,
+        { tipoComprobante: tipoComprobantePago },
+        { withCredentials: true }
+      );
       setListaEncomiendas((actual: any[]) => actual.map(encomienda =>
         encomienda.codigoTracking === res.data.codigoTracking
           ? { ...encomienda, estadoLogistico: res.data.estadoLogistico }
           : encomienda
       ));
+      const encPagada = pagoSeleccionado;
       setPagoSeleccionado(null);
-      mostrarMensaje(`Pago simulado registrado para ${res.data.codigoTracking}`);
+      mostrarMensaje(`Pago confirmado (${res.data.tipoComprobante || tipoComprobantePago} ${res.data.numeroSerie || ''}) para ${res.data.codigoTracking}`);
+      setComprobanteVista({
+        numeroSerie: res.data.numeroSerie || (tipoComprobantePago === 'FACTURA' ? 'F001-000001' : 'B001-000001'),
+        tipoComprobante: res.data.tipoComprobante || tipoComprobantePago,
+        estadoPago: res.data.estadoPago || 'SIMULADO',
+        montoSubtotal: res.data.subtotal,
+        montoIgv: res.data.igv,
+        montoTotal: res.data.total,
+        fechaEmision: res.data.fechaEmision || res.data.fechaPago,
+        fechaPago: res.data.fechaPago,
+        codigoTracking: encPagada.codigoTracking,
+        descripcionEncomienda: encPagada.descripcion,
+        pesoTotal: encPagada.peso,
+        ruta: encPagada.ruta,
+        clienteNombre: `${encPagada.remitente?.nombres || ''} ${encPagada.remitente?.apellidos || ''}`.trim(),
+        clienteDocumento: encPagada.remitente?.numDocumento || '',
+        destinatarioNombre: `${encPagada.destinatario?.nombres || ''} ${encPagada.destinatario?.apellidos || ''}`.trim(),
+      });
     } catch (error: any) {
       alert(error.response?.data?.mensaje || "No se pudo registrar el pago simulado.");
     } finally {
       setPagoProcesando(false);
+    }
+  };
+
+  const verComprobanteEncomienda = async (codigoTracking: string) => {
+    if (comprobanteCargando) return;
+    setComprobanteCargando(codigoTracking);
+    try {
+      const res = await axios.get(
+        `http://localhost:8080/api/comprobantes/encomienda/${encodeURIComponent(codigoTracking)}`,
+        { withCredentials: true }
+      );
+      setComprobanteVista(res.data);
+    } catch (error: any) {
+      alert(error.response?.data?.mensaje || 'No se pudo obtener el comprobante de pago.');
+    } finally {
+      setComprobanteCargando('');
+    }
+  };
+
+  const imprimirComprobantePago = (comp: any) => {
+    if (!comp) return;
+    setManifiestoImprimir(null);
+    setEncomiendaImprimir(null);
+    setComprobanteImprimir(comp);
+    window.addEventListener('afterprint', () => setComprobanteImprimir(null), { once: true });
+    setTimeout(() => window.print(), 150);
+  };
+
+  // ----- Incidencias operativas -----
+  const cargarIncidencias = async () => {
+    try {
+      const res = await axios.get('http://localhost:8080/api/incidencias', { withCredentials: true });
+      setListaIncidencias(res.data);
+    } catch (error) {
+      console.error('Error al cargar incidencias');
+    }
+  };
+
+  const abrirReporteIncidencia = (codigoTracking: string) => {
+    setIncidenciaForm({
+      codigoTracking,
+      tipoProblema: 'Retraso en ruta',
+      descripcion: '',
+    });
+    setVistaActual('incidencias');
+  };
+
+  const reportarIncidencia = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (incidenciaEnviando) return;
+    setIncidenciaEnviando(true);
+    try {
+      await axios.post('http://localhost:8080/api/incidencias', {
+        codigoTracking: incidenciaForm.codigoTracking.trim().toUpperCase(),
+        tipoProblema: incidenciaForm.tipoProblema,
+        descripcion: incidenciaForm.descripcion.trim(),
+      }, { withCredentials: true });
+      mostrarMensaje(`Incidencia registrada para ${incidenciaForm.codigoTracking.toUpperCase()}`);
+      setIncidenciaForm({ codigoTracking: '', tipoProblema: 'Retraso en ruta', descripcion: '' });
+      await cargarIncidencias();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo registrar la incidencia'));
+    } finally {
+      setIncidenciaEnviando(false);
+    }
+  };
+
+  const confirmarResolverIncidencia = async () => {
+    if (!incidenciaAResolver || confirmacionProcesando) return;
+    if (!resolucionTexto.trim()) {
+      alert('Indica la solución o acciones tomadas para cerrar la incidencia.');
+      return;
+    }
+    setConfirmacionProcesando(true);
+    try {
+      await axios.post(
+        `http://localhost:8080/api/incidencias/${incidenciaAResolver.idIncidencia}/resolver`,
+        { resolucion: resolucionTexto.trim() },
+        { withCredentials: true }
+      );
+      mostrarMensaje(`Incidencia #${incidenciaAResolver.idIncidencia} marcada como resuelta`);
+      setIncidenciaAResolver(null);
+      setResolucionTexto('');
+      await cargarIncidencias();
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'No se pudo resolver la incidencia'));
+    } finally {
+      setConfirmacionProcesando(false);
+    }
+  };
+
+  // ----- Estadísticas y Reportes (ADMIN / SUPERVISOR) -----
+  const cargarEstadisticas = async () => {
+    setEstadisticasCargando(true);
+    try {
+      const res = await axios.get('http://localhost:8080/api/estadisticas', { withCredentials: true });
+      setEstadisticas(res.data);
+    } catch (error) {
+      console.error('Error al cargar estadísticas');
+    } finally {
+      setEstadisticasCargando(false);
+    }
+  };
+
+  const exportarEstadisticasCsv = () => {
+    if (!estadisticas) return;
+    const filas: string[][] = [
+      ['REPORTE GERENCIAL PERUBUS CARGO'],
+      ['Fecha de generacion', new Date().toLocaleString('es-PE')],
+      [],
+      ['INDICADOR', 'VALOR'],
+      ['Total de Encomiendas', String(estadisticas.totalEncomiendas)],
+      ['Encomiendas Entregadas / Recogidas', String(estadisticas.encomiendasEntregadas)],
+      ['Encomiendas En Curso', String(estadisticas.encomiendasEnCurso)],
+      ['Encomiendas Pendientes de Pago', String(estadisticas.encomiendasPendientesPago)],
+      ['Encomiendas Canceladas', String(estadisticas.encomiendasCanceladas)],
+      ['Peso Total Transportado (Kg)', Number(estadisticas.pesoTotalTransportadoKg || 0).toFixed(2)],
+      ['Ingresos Subtotal (S/)', Number(estadisticas.ingresosSubtotal || 0).toFixed(2)],
+      ['IGV 18% (S/)', Number(estadisticas.ingresosIgv || 0).toFixed(2)],
+      ['Ingresos Totales Facturados (S/)', Number(estadisticas.ingresosTotales || 0).toFixed(2)],
+      ['Boletas Emitidas', String(estadisticas.totalBoletas)],
+      ['Facturas Emitidas', String(estadisticas.totalFacturas)],
+      ['Ocupacion Promedio de Buses (%)', `${estadisticas.ocupacionPromedioBuses}%`],
+      ['Incidencias Abiertas', String(estadisticas.incidenciasAbiertas)],
+      ['Incidencias Resueltas', String(estadisticas.incidenciasResueltas)],
+      [],
+      ['DESGLOSE POR RUTA'],
+      ['Ruta', 'Envios', 'Peso Total (Kg)', 'Subtotal (S/)', 'Total con IGV (S/)'],
+      ...(estadisticas.porRuta || []).map((r: any) => [
+        r.ruta,
+        String(r.cantidadEncomiendas),
+        Number(r.pesoTotalKg || 0).toFixed(2),
+        Number(r.ingresosSubtotal || 0).toFixed(2),
+        Number(r.ingresosTotal || 0).toFixed(2),
+      ]),
+    ];
+    const csv = '\uFEFF' + filas.map(f => f.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const enlace = document.createElement('a');
+    enlace.href = url;
+    enlace.download = `reporte-perubus-${new Date().toISOString().slice(0, 10)}.csv`;
+    enlace.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const confirmarLlegada = async (codigoTracking: string) => {
+    if (llegadaConfirmando) return;
+    setLlegadaConfirmando(codigoTracking);
+    try {
+      await axios.post(
+        `http://localhost:8080/api/encomiendas/${encodeURIComponent(codigoTracking)}/confirmar-llegada`,
+        {},
+        { withCredentials: true }
+      );
+      setListaEncomiendas(actual => actual.map(encomienda =>
+        encomienda.codigoTracking === codigoTracking
+          ? { ...encomienda, estadoLogistico: 'Llegó a agencia de destino' }
+          : encomienda
+      ));
+      mostrarMensaje(`Llegada a la agencia de destino confirmada para ${codigoTracking}`);
+    } catch (error: unknown) {
+      alert(axios.isAxiosError<{ mensaje?: string }>(error)
+        ? error.response?.data?.mensaje || 'No se pudo confirmar la llegada.'
+        : 'No se pudo confirmar la llegada.');
+    } finally {
+      setLlegadaConfirmando('');
+    }
+  };
+
+  const actualizarEstadoDestino = async (
+    codigoTracking: string,
+    accion: 'disponible-recojo' | 'iniciar-reparto',
+    estadoLogistico: string
+  ) => {
+    if (llegadaConfirmando) return;
+    setLlegadaConfirmando(codigoTracking);
+    try {
+      const res = await axios.post(
+        `http://localhost:8080/api/encomiendas/${encodeURIComponent(codigoTracking)}/${accion}`,
+        {},
+        { withCredentials: true }
+      );
+      setListaEncomiendas(actual => actual.map(encomienda =>
+        encomienda.codigoTracking === codigoTracking
+          ? { ...encomienda, estadoLogistico: res.data.estadoLogistico }
+          : encomienda
+      ));
+      mostrarMensaje(`${estadoLogistico}: ${codigoTracking}`);
+    } catch (error: unknown) {
+      alert(axios.isAxiosError<{ mensaje?: string }>(error)
+        ? error.response?.data?.mensaje || 'No se pudo actualizar el estado de destino.'
+        : 'No se pudo actualizar el estado de destino.');
+    } finally {
+      setLlegadaConfirmando('');
+    }
+  };
+
+  const abrirConfirmacionEntrega = (encomienda: any, tipo: 'recojo' | 'entrega') => {
+    setEntregaAConfirmar({ encomienda, tipo });
+    setDniReceptor('');
+    setNombreReceptor('');
+    setAvisoDniEntrega(null);
+  };
+
+  const manejarDniEntrega = async (valor: string, encomienda: any) => {
+    const limpio = valor.replace(/\D/g, '');
+    setDniReceptor(limpio);
+    if (limpio.length !== 8 && limpio.length !== 11) {
+      setAvisoDniEntrega(null);
+      return;
+    }
+
+    const docDest = (encomienda?.destinatario?.numDocumento || '').trim();
+    const nombreDest = `${encomienda?.destinatario?.nombres || ''} ${encomienda?.destinatario?.apellidos || ''}`.trim();
+    if (docDest && limpio === docDest) {
+      if (nombreDest) setNombreReceptor(nombreDest);
+      setAvisoDniEntrega({
+        ok: true,
+        texto: `✓ Documento verificado: coincide con el destinatario titular (${nombreDest || docDest}).`,
+      });
+      return;
+    }
+
+    try {
+      const res = await axios.get(`http://localhost:8080/api/documentos/${limpio}`);
+      const nombreConsultado = `${res.data.nombres || ''} ${res.data.apellidos || ''}`.trim();
+      if (nombreConsultado) setNombreReceptor(nombreConsultado);
+      setAvisoDniEntrega({
+        ok: false,
+        texto: `Documento identificado (${nombreConsultado || limpio}), distinto al destinatario titular (${docDest || 'S/D'}). Verifica autorización.`,
+      });
+    } catch {
+      setAvisoDniEntrega({
+        ok: false,
+        texto: `Documento distinto al destinatario titular (${docDest || 'S/D'}). Ingresa el nombre completo de quien recibe.`,
+      });
+    }
+  };
+
+  const ejecutarConfirmarEntrega = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!entregaAConfirmar || llegadaConfirmando) return;
+    const { encomienda } = entregaAConfirmar;
+    const codigoTracking = encomienda.codigoTracking;
+    const dniLimpio = dniReceptor.trim();
+    const recibidoPor = nombreReceptor.trim();
+
+    if (dniLimpio.length !== 8 && dniLimpio.length !== 11) {
+      alert('Ingresa un DNI válido (8 dígitos) o RUC (11 dígitos) de la persona que recibe.');
+      return;
+    }
+    if (!recibidoPor) {
+      alert('Ingresa el nombre completo de la persona que recibe la encomienda.');
+      return;
+    }
+
+    setLlegadaConfirmando(codigoTracking);
+    try {
+      const res = await axios.post(
+        `http://localhost:8080/api/encomiendas/${encodeURIComponent(codigoTracking)}/confirmar-entrega`,
+        { recibidoPor, dniReceptor: dniLimpio },
+        { withCredentials: true }
+      );
+      setListaEncomiendas(actual => actual.map(enc =>
+        enc.codigoTracking === codigoTracking
+          ? { ...enc, estadoLogistico: res.data.estadoLogistico }
+          : enc
+      ));
+      setEntregaAConfirmar(null);
+      mostrarMensaje(`${res.data.estadoLogistico} confirmado con DNI ${dniLimpio} para ${codigoTracking}`);
+    } catch (error: unknown) {
+      alert(axios.isAxiosError<{ mensaje?: string }>(error)
+        ? error.response?.data?.mensaje || 'No se pudo confirmar la entrega.'
+        : 'No se pudo confirmar la entrega.');
+    } finally {
+      setLlegadaConfirmando('');
+    }
+  };
+
+  const retirarEncomiendaDeManifiesto = async (codigoTracking: string, idManifiesto?: number) => {
+    if (retirandoTracking) return;
+    if (!window.confirm(`¿Retirar la encomienda ${codigoTracking} del manifiesto del bus? Volverá al estado "En origen".`)) return;
+    setRetirandoTracking(codigoTracking);
+    try {
+      const url = idManifiesto
+        ? `http://localhost:8080/api/manifiestos/${idManifiesto}/encomiendas/${encodeURIComponent(codigoTracking)}`
+        : `http://localhost:8080/api/manifiestos/encomiendas/${encodeURIComponent(codigoTracking)}`;
+      const res = await axios.delete(url, { withCredentials: true });
+      setListaEncomiendas(actual => actual.map(enc =>
+        enc.codigoTracking === codigoTracking
+          ? { ...enc, estadoLogistico: 'En origen', numeroBus: null, fechaViaje: null }
+          : enc
+      ));
+      setListaManifiestos(actual => actual.map(m =>
+        m.idManifiesto === res.data.idManifiesto ? res.data : m
+      ));
+      if (manifiestoDetalle && manifiestoDetalle.idManifiesto === res.data.idManifiesto) {
+        setManifiestoDetalle(res.data);
+      }
+      mostrarMensaje(`Encomienda ${codigoTracking} retirada del manifiesto y devuelta a origen`);
+    } catch (error: any) {
+      alert(error.response?.data?.mensaje || 'No se pudo retirar la encomienda del manifiesto.');
+    } finally {
+      setRetirandoTracking('');
     }
   };
 
@@ -133,18 +683,138 @@ export default function Dashboard() {
     } catch (error) { console.error("Error al cargar manifiestos"); }
   };
 
+  const cargarSolicitudesPendientes = useCallback(async () => {
+    try {
+      const res = await axios.get('http://localhost:8080/api/encomiendas/solicitudes-pendientes', {
+        withCredentials: true
+      });
+      setSolicitudesPendientes(res.data);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        setSolicitudesPendientes([]);
+        setMensaje('La sesión de personal expiró. Inicia sesión nuevamente para revisar las solicitudes.');
+        return;
+      }
+      console.error('Error al cargar solicitudes pendientes:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (vistaActual !== 'notificaciones') return;
+    const intervalo = window.setInterval(() => {
+      void cargarSolicitudesPendientes();
+    }, 30_000);
+    return () => window.clearInterval(intervalo);
+  }, [vistaActual, cargarSolicitudesPendientes]);
+
+  const solicitudesAdmin = solicitudesPendientes.filter((solicitud: any) => solicitud.tipo !== 'AGREGAR_BULTO');
+  const bultosNotificados = solicitudesPendientes.filter((solicitud: any) => solicitud.tipo === 'AGREGAR_BULTO');
+  const notificacionesPendientes = solicitudesPendientes.filter((solicitud: any) => solicitud.estado === 'PENDIENTE').length;
+
+  const resolverSolicitud = async () => {
+    if (!solicitudAResolver || confirmacionProcesando) return;
+    const { solicitud, aprobar } = solicitudAResolver;
+    const comentario = comentarioResolucion.trim();
+    if (!aprobar && !comentario) {
+      alert('Indica el motivo para rechazar esta solicitud.');
+      return;
+    }
+    setConfirmacionProcesando(true);
+    try {
+      await axios.post(
+        `http://localhost:8080/api/encomiendas/solicitudes/${solicitud.idSolicitud}/resolver`,
+        { aprobar, comentario },
+        { withCredentials: true }
+      );
+      mostrarMensaje(`Solicitud ${aprobar ? 'aprobada' : 'rechazada'}`);
+      setSolicitudAResolver(null);
+      setComentarioResolucion('');
+      await Promise.all([cargarSolicitudesPendientes(), cargarEncomiendas()]);
+    } catch (error: unknown) {
+      alert(axios.isAxiosError<{ mensaje?: string }>(error)
+        ? error.response?.data?.mensaje || 'No se pudo resolver la solicitud.'
+        : 'No se pudo resolver la solicitud.');
+    } finally {
+      setConfirmacionProcesando(false);
+    }
+  };
+
   const crearManifiesto = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (manifiestoEditando !== null) {
+      setConfirmarEdicionManifiesto(true);
+      return;
+    }
     try {
-      await axios.post('http://localhost:8080/api/manifiestos', {
+      const datos = {
         ...manifiestoForm,
         capacidadKg: Number(manifiestoForm.capacidadKg)
-      });
+      };
+      await axios.post('http://localhost:8080/api/manifiestos', datos);
       mostrarMensaje('Manifiesto creado exitosamente');
       setManifiestoForm({ numBus: '', ruta: '', fechaViaje: '', capacidadKg: '' });
       cargarManifiestos();
     } catch (error: any) {
-      alert(error.response?.data?.mensaje || 'Error al crear el manifiesto');
+      alert(error.response?.data?.mensaje || 'No se pudo guardar el manifiesto');
+    }
+  };
+
+  const guardarEdicionManifiesto = async () => {
+    if (manifiestoEditando === null || confirmacionProcesando) return;
+    setConfirmacionProcesando(true);
+    try {
+      await axios.put(`http://localhost:8080/api/manifiestos/${manifiestoEditando}`, {
+        ...manifiestoForm,
+        capacidadKg: Number(manifiestoForm.capacidadKg)
+      });
+      mostrarMensaje(`Manifiesto N° ${manifiestoEditando} actualizado exitosamente`);
+      setConfirmarEdicionManifiesto(false);
+      cancelarEdicionManifiesto();
+      await cargarManifiestos();
+    } catch (error: any) {
+      alert(error.response?.data?.mensaje || 'No se pudo actualizar el manifiesto');
+    } finally {
+      setConfirmacionProcesando(false);
+    }
+  };
+
+  const editarManifiesto = (manifiesto: any) => {
+    setManifiestoEditando(manifiesto.idManifiesto);
+    setManifiestoForm({
+      numBus: manifiesto.numBus || '',
+      ruta: manifiesto.ruta || '',
+      fechaViaje: manifiesto.fechaViaje || '',
+      capacidadKg: String(manifiesto.capacidadKg ?? '')
+    });
+  };
+
+  const cancelarEdicionManifiesto = () => {
+    setManifiestoEditando(null);
+    setManifiestoForm({ numBus: '', ruta: '', fechaViaje: '', capacidadKg: '' });
+  };
+
+  const eliminarManifiesto = async (manifiesto: any) => {
+    const cantidadEncomiendas = manifiesto.encomiendas?.length ?? 0;
+    if (cantidadEncomiendas > 0) {
+      alert('No se puede eliminar un manifiesto que tiene encomiendas asignadas.');
+      return;
+    }
+    setManifiestoAEliminar(manifiesto);
+  };
+
+  const confirmarEliminarManifiesto = async () => {
+    if (!manifiestoAEliminar || confirmacionProcesando) return;
+    setConfirmacionProcesando(true);
+    try {
+      await axios.delete(`http://localhost:8080/api/manifiestos/${manifiestoAEliminar.idManifiesto}`);
+      if (manifiestoEditando === manifiestoAEliminar.idManifiesto) cancelarEdicionManifiesto();
+      mostrarMensaje(`Manifiesto N° ${manifiestoAEliminar.idManifiesto} eliminado`);
+      setManifiestoAEliminar(null);
+      await cargarManifiestos();
+    } catch (error: any) {
+      alert(error.response?.data?.mensaje || 'No se pudo eliminar el manifiesto');
+    } finally {
+      setConfirmacionProcesando(false);
     }
   };
 
@@ -189,19 +859,24 @@ export default function Dashboard() {
         console.error("Error al cargar encomiendas para impresión:", error);
       }
     }
+    setComprobanteImprimir(null);
+    setEncomiendaImprimir(null);
     setManifiestoImprimir(manifiesto);
     window.addEventListener('afterprint', () => setManifiestoImprimir(null), { once: true });
-    setTimeout(() => window.print(), 100);
+    setTimeout(() => window.print(), 150);
   };
 
   const imprimirEncomienda = (enc?: any) => {
     const seleccionada = enc || encomiendaConsultada || resumenRegistrado;
     if (!seleccionada) return;
+    setManifiestoImprimir(null);
+    setComprobanteImprimir(null);
+    setComprobanteVista(null);
     setEncomiendaImprimir(seleccionada);
     window.addEventListener('afterprint', () => setEncomiendaImprimir(null), { once: true });
     setTimeout(() => {
       window.print();
-    }, 100);
+    }, 150);
   };
 
   const limpiarConsulta = () => {
@@ -256,10 +931,22 @@ export default function Dashboard() {
   const registrarCliente = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:8080/api/clientes/registrar', clienteForm);
-      mostrarMensaje('Cliente registrado exitosamente');
+      const res = await axios.post('http://localhost:8080/api/clientes/registrar', clienteForm);
       setClienteForm({ numDocumento: '', nombres: '', apellidos: '', telefono: '', correo: '' });
-    } catch (error) { alert("Error al guardar cliente"); }
+      if (!crearAccesoAlRegistrar) {
+        mostrarMensaje('Cliente registrado exitosamente');
+        return;
+      }
+      try {
+        const acceso = await axios.post(`http://localhost:8080/api/clientes/${res.data.idCliente}/acceso`);
+        setCredenciales(acceso.data);
+        mostrarMensaje('Cliente registrado y acceso al portal generado');
+      } catch (error: any) {
+        mostrarMensaje('Cliente registrado, pero no se pudo generar el acceso. Hazlo desde "Accesos al portal".');
+      }
+    } catch (error: any) {
+      alert(mensajeDeError(error, 'Error al guardar cliente'));
+    }
   };
 
   const calcularTarifa = async () => {
@@ -329,18 +1016,56 @@ export default function Dashboard() {
 
         <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
           <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', color: '#666' }}>Recepción</div>
-          <button onClick={() => setVistaActual('registro_encomienda')} style={obtenerEstiloMenu(vistaActual === 'registro_encomienda')}>Nueva Encomienda</button>
+          {puede(rol, 'registrar_encomienda') && <button onClick={() => setVistaActual('registro_encomienda')} style={obtenerEstiloMenu(vistaActual === 'registro_encomienda')}>Nueva Encomienda</button>}
           <button onClick={() => setVistaActual('lista_encomiendas')} style={obtenerEstiloMenu(vistaActual === 'lista_encomiendas')}>Historial Encomiendas</button>
+          {puede(rol, 'notificaciones') && (
+          <button
+            type="button"
+            aria-label={`Notificaciones${notificacionesPendientes > 0 ? `, ${notificacionesPendientes} pendientes` : ''}`}
+            onClick={() => setVistaActual('notificaciones')}
+            style={{
+              ...obtenerEstiloMenu(vistaActual === 'notificaciones'),
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              gap: '10px',
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M10 21h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            <span style={{ flex: 1, textAlign: 'left' }}>Notificaciones</span>
+            {notificacionesPendientes > 0 && (
+              <span className="notification-badge">{notificacionesPendientes}</span>
+            )}
+          </button>
+          )}
           
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Directorio</div>
-          <button onClick={() => setVistaActual('registro_cliente')} style={obtenerEstiloMenu(vistaActual === 'registro_cliente')}>Nuevo Cliente</button>
-          <button onClick={() => setVistaActual('lista_clientes')} style={obtenerEstiloMenu(vistaActual === 'lista_clientes')}>Cartera de Clientes</button>
+          {(puede(rol, 'registrar_cliente') || puede(rol, 'gestionar_clientes')) && <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Directorio</div>}
+          {puede(rol, 'registrar_cliente') && <button onClick={() => setVistaActual('registro_cliente')} style={obtenerEstiloMenu(vistaActual === 'registro_cliente')}>Nuevo Cliente</button>}
+          {puede(rol, 'gestionar_acceso_portal') && <button onClick={() => setVistaActual('accesos_portal')} style={obtenerEstiloMenu(vistaActual === 'accesos_portal')}>Accesos al portal</button>}
+          {puede(rol, 'gestionar_clientes') && <button onClick={() => setVistaActual('lista_clientes')} style={obtenerEstiloMenu(vistaActual === 'lista_clientes')}>Cartera de Clientes</button>}
 
-          <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Logística</div>
-          <button onClick={() => setVistaActual('lista_manifiestos')} style={obtenerEstiloMenu(vistaActual === 'lista_manifiestos')}>Manifiestos de Carga</button>
+          {(puede(rol, 'ver_manifiestos') || puede(rol, 'gestionar_incidencias')) && <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Logística</div>}
+          {puede(rol, 'ver_manifiestos') && <button onClick={() => setVistaActual('lista_manifiestos')} style={obtenerEstiloMenu(vistaActual === 'lista_manifiestos')}>Manifiestos de Carga</button>}
+          {puede(rol, 'gestionar_incidencias') && (
+            <button onClick={() => setVistaActual('incidencias')} style={obtenerEstiloMenu(vistaActual === 'incidencias')}>
+              Incidencias Operativas
+            </button>
+          )}
+
+          {(puede(rol, 'gestionar_personal') || puede(rol, 'ver_estadisticas')) && (
+            <>
+              <div style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px', marginTop: '20px', color: '#666' }}>Administración</div>
+              {puede(rol, 'ver_estadisticas') && <button onClick={() => setVistaActual('estadisticas')} style={obtenerEstiloMenu(vistaActual === 'estadisticas')}>Estadísticas y Reportes</button>}
+              {puede(rol, 'gestionar_personal') && <button onClick={() => setVistaActual('personal')} style={obtenerEstiloMenu(vistaActual === 'personal')}>Personal</button>}
+            </>
+          )}
         </div>
 
-        <button onClick={() => { sessionStorage.removeItem('idUsuario'); navigate('/'); }} style={{ padding: '20px', backgroundColor: '#1a1a27', color: '#ff4d4d', border: 'none', cursor: 'pointer', borderTop: '1px solid #2B2B40', textAlign: 'left', fontWeight: 'bold' }}>
+        <div style={{ padding: '0 20px 12px', fontSize: '12px', color: '#8F90A6' }}>Sesión: <strong style={{ color: '#fff' }}>{(ETIQUETAS_ROL as Record<string, string>)[rol] || rol}</strong></div>
+        <button onClick={() => void cerrarSesion()} style={{ padding: '20px', backgroundColor: '#1a1a27', color: '#ff4d4d', border: 'none', cursor: 'pointer', borderTop: '1px solid #2B2B40', textAlign: 'left', fontWeight: 'bold' }}>
           Cerrar Sesión
         </button>
       </div>
@@ -371,7 +1096,7 @@ export default function Dashboard() {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', color: '#3F4254' }}>
                     <div><strong>Tracking:</strong> {resumenRegistrado.codigoTracking}</div>
-                    <div><strong>Estado:</strong> {resumenRegistrado.estadoLogistico}</div>
+                    <div><strong>Estado:</strong> {etiquetaEstadoEncomienda(resumenRegistrado.estadoLogistico)}</div>
                     <div><strong>Peso:</strong> {resumenRegistrado.peso} Kg</div>
                     <div><strong>Tarifa:</strong> S/ {Number(resumenRegistrado.tarifaBase).toFixed(2)}</div>
                     <div><strong>Descripción:</strong> {resumenRegistrado.descripcion}</div>
@@ -524,9 +1249,13 @@ export default function Dashboard() {
               </div>
               <div><label style={labelStyle}>Teléfono Móvil</label><input type="text" maxLength={9} required value={clienteForm.telefono} onChange={e => setClienteForm({...clienteForm, telefono: e.target.value})} style={inputStyle} /></div>
               <div><label style={labelStyle}>Nombres</label><input type="text" required value={clienteForm.nombres} onChange={e => setClienteForm({...clienteForm, nombres: e.target.value})} style={inputStyle} /></div>
-              <div><label style={labelStyle}>Apellidos</label><input type="text" required value={clienteForm.apellidos} onChange={e => setClienteForm({...clienteForm, apellidos: e.target.value})} style={inputStyle} /></div>
+              <div><label style={labelStyle}>Apellidos</label><input type="text" required={clienteForm.numDocumento.length === 8} value={clienteForm.apellidos} onChange={e => setClienteForm({...clienteForm, apellidos: e.target.value})} style={inputStyle} /></div>
               <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>Correo Electrónico</label><input type="email" value={clienteForm.correo} onChange={e => setClienteForm({...clienteForm, correo: e.target.value})} style={inputStyle} /></div>
               
+              <label style={{ gridColumn: 'span 2', display: 'flex', gap: '10px', alignItems: 'center', fontSize: '14px', color: '#3F4254' }}>
+                <input type="checkbox" checked={crearAccesoAlRegistrar} onChange={e => setCrearAccesoAlRegistrar(e.target.checked)} />
+                Crear acceso al portal del cliente (se genera una clave temporal para entregársela)
+              </label>
               <button type="submit" style={{ ...btnPrimary, gridColumn: 'span 2' }}>Registrar Cliente</button>
             </form>
           )}
@@ -537,8 +1266,21 @@ export default function Dashboard() {
           {vistaActual === 'lista_clientes' && (
             <div>
               <h2 style={{ color: '#1E1E2D', marginBottom: '20px', fontSize: '24px' }}>Directorio de Clientes</h2>
+              {clienteEditando && (
+                <form onSubmit={guardarCliente} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px', alignItems: 'end', marginBottom: '25px', padding: '20px', border: '1px solid #D32F2F', borderRadius: '8px' }}>
+                  <div style={{ gridColumn: '1 / -1', fontWeight: 600, color: '#1E1E2D' }}>Editando cliente {clienteEditando.numDocumento}</div>
+                  <div><label style={labelStyle}>Nombres / Razón social</label><input required value={clienteEditando.nombres || ''} onChange={e => setClienteEditando({ ...clienteEditando, nombres: e.target.value })} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>Apellidos</label><input value={clienteEditando.apellidos || ''} onChange={e => setClienteEditando({ ...clienteEditando, apellidos: e.target.value })} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>Teléfono</label><input maxLength={9} value={clienteEditando.telefono || ''} onChange={e => setClienteEditando({ ...clienteEditando, telefono: e.target.value.replace(/\D/g, '') })} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>Correo</label><input type="email" value={clienteEditando.correo || ''} onChange={e => setClienteEditando({ ...clienteEditando, correo: e.target.value })} style={inputStyle} /></div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="submit" style={btnPrimary}>Guardar</button>
+                    <button type="button" onClick={() => setClienteEditando(null)} style={btnLight}>Cancelar</button>
+                  </div>
+                </form>
+              )}
               <table style={tableStyle}>
-                <thead><tr><th style={thStyle}>Documento</th><th style={thStyle}>Cliente</th><th style={thStyle}>Teléfono</th><th style={thStyle}>Correo</th></tr></thead>
+                <thead><tr><th style={thStyle}>Documento</th><th style={thStyle}>Cliente</th><th style={thStyle}>Teléfono</th><th style={thStyle}>Correo</th><th style={thStyle}>Cuenta del portal</th><th style={thStyle}>Acciones</th></tr></thead>
                 <tbody>
                   {listaClientes.map((c: any) => (
                     <tr key={c.idCliente} style={trStyle}>
@@ -546,6 +1288,17 @@ export default function Dashboard() {
                       <td style={tdStyle}>{c.nombres} {c.apellidos}</td>
                       <td style={tdStyle}>{c.telefono}</td>
                       <td style={tdStyle}>{c.correo}</td>
+                      <td style={tdStyle}>{badgeCuenta(c.cuentaPortal)}</td>
+                      <td style={tdStyle}>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <button type="button" onClick={() => setClienteEditando({ ...c })} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Editar</button>
+                          <button type="button" onClick={() => void eliminarCliente(c)} style={{ padding: '6px 12px', backgroundColor: '#FDECEC', color: '#B42318', border: '1px solid #F5C2C0', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Eliminar</button>
+                          <button type="button" disabled={accesoProcesando || c.cuentaPortal === 'BLOQUEADA'} onClick={() => void generarAccesoPortal(c)} style={btnMini}>{c.cuentaPortal === 'SIN_CUENTA' ? 'Generar acceso' : 'Restablecer clave'}</button>
+                          {c.cuentaPortal !== 'SIN_CUENTA' && (
+                            <button type="button" onClick={() => void cambiarBloqueoCuenta(c, c.cuentaPortal !== 'BLOQUEADA')} style={btnMini}>{c.cuentaPortal === 'BLOQUEADA' ? 'Desbloquear' : 'Bloquear'}</button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -553,8 +1306,196 @@ export default function Dashboard() {
             </div>
           )}
 
+          {vistaActual === 'accesos_portal' && (
+            <div>
+              <h2 style={{ color: '#1E1E2D', marginBottom: '8px', fontSize: '24px' }}>Accesos al portal de clientes</h2>
+              <p style={{ color: '#6B7280', marginTop: 0, marginBottom: '20px' }}>
+                Busca al cliente por su documento para generar su acceso o restablecer su clave. Entrégale la clave temporal en persona: no se vuelve a mostrar.
+              </p>
+              <form onSubmit={buscarClienteAcceso} style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
+                <input value={docAcceso} onChange={e => setDocAcceso(e.target.value.replace(/\D/g, ''))} maxLength={11} placeholder="DNI o RUC del cliente" required style={{ ...inputStyle, flex: 1 }} />
+                <button type="submit" style={btnSecondary}>Buscar</button>
+              </form>
+              {errorAcceso && (
+                <div style={{ padding: '12px', backgroundColor: '#ffebee', color: '#c62828', borderRadius: '6px', marginBottom: '20px' }}>{errorAcceso}</div>
+              )}
+              {clienteAcceso && (
+                <div style={{ border: '1px solid #E4E6EF', borderRadius: '8px', padding: '20px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, color: '#1E1E2D', fontSize: '18px' }}>{clienteAcceso.nombres} {clienteAcceso.apellidos}</div>
+                      <div style={{ color: '#6B7280', fontSize: '14px' }}>{clienteAcceso.tipoDocumento} {clienteAcceso.numDocumento} · {clienteAcceso.telefono || 'sin teléfono'} · {clienteAcceso.correo || 'sin correo'}</div>
+                    </div>
+                    {badgeCuenta(clienteAcceso.cuentaPortal)}
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap' }}>
+                    <button type="button" disabled={accesoProcesando || clienteAcceso.cuentaPortal === 'BLOQUEADA'} onClick={() => void generarAccesoPortal(clienteAcceso)} style={{ ...btnPrimary, padding: '10px 16px', fontSize: '14px' }}>
+                      {clienteAcceso.cuentaPortal === 'SIN_CUENTA' ? 'Generar acceso' : 'Restablecer clave'}
+                    </button>
+                    {puede(rol, 'bloquear_cuentas') && clienteAcceso.cuentaPortal !== 'SIN_CUENTA' && (
+                      <button type="button" onClick={() => void cambiarBloqueoCuenta(clienteAcceso, clienteAcceso.cuentaPortal !== 'BLOQUEADA')} style={{ ...btnLight, padding: '10px 16px', fontSize: '14px' }}>
+                        {clienteAcceso.cuentaPortal === 'BLOQUEADA' ? 'Desbloquear cuenta' : 'Bloquear cuenta'}
+                      </button>
+                    )}
+                  </div>
+                  {clienteAcceso.cuentaPortal === 'BLOQUEADA' && (
+                    <p style={{ fontSize: '13px', color: '#B42318', marginBottom: 0 }}>La cuenta está bloqueada. Solo un administrador o supervisor puede desbloquearla.</p>
+                  )}
+                  {clienteAcceso.cuentaPortal === 'CLAVE_TEMPORAL' && (
+                    <p style={{ fontSize: '13px', color: '#B26A00', marginBottom: 0 }}>El cliente aún no cambió su clave temporal.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {vistaActual === 'personal' && (
+            <div>
+              <h2 style={{ color: '#1E1E2D', marginBottom: '20px', fontSize: '24px' }}>Personal</h2>
+              <form onSubmit={guardarPersonal} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '12px', alignItems: 'end', marginBottom: '25px' }}>
+                <div><label style={labelStyle}>Usuario</label><input required value={personalForm.username} onChange={e => setPersonalForm({ ...personalForm, username: e.target.value })} style={inputStyle} /></div>
+                {personalEditando === null && (
+                  <div><label style={labelStyle}>Contraseña</label><input required type="password" minLength={6} value={personalForm.password} onChange={e => setPersonalForm({ ...personalForm, password: e.target.value })} style={inputStyle} /></div>
+                )}
+                <div>
+                  <label style={labelStyle}>Rol</label>
+                  <select value={personalForm.rol} onChange={e => setPersonalForm({ ...personalForm, rol: e.target.value })} style={inputStyle}>
+                    {ROLES.map(r => <option key={r} value={r}>{ETIQUETAS_ROL[r]}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button type="submit" style={btnPrimary}>{personalEditando === null ? 'Registrar' : 'Guardar cambios'}</button>
+                  {personalEditando !== null && (
+                    <button type="button" onClick={() => { setPersonalEditando(null); setPersonalForm({ username: '', password: '', rol: 'AGENTE' }); }} style={btnLight}>Cancelar</button>
+                  )}
+                </div>
+              </form>
+              <table style={tableStyle}>
+                <thead><tr><th style={thStyle}>Usuario</th><th style={thStyle}>Rol</th><th style={thStyle}>Estado</th><th style={thStyle}>Acciones</th></tr></thead>
+                <tbody>
+                  {listaPersonal.map((u: any) => (
+                    <tr key={u.idUsuario} style={trStyle}>
+                      <td style={tdStyle}>{u.username}</td>
+                      <td style={tdStyle}>{(ETIQUETAS_ROL as Record<string, string>)[u.rol] || u.rol}</td>
+                      <td style={tdStyle}>
+                        <span style={{ backgroundColor: u.estado ? '#E8F5E9' : '#FDECEC', color: u.estado ? '#2E7D32' : '#B42318', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>
+                          {u.estado ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </td>
+                      <td style={tdStyle}>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          <button type="button" onClick={() => editarPersonal(u)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Editar</button>
+                          <button type="button" onClick={() => void cambiarEstadoPersonal(u)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>{u.estado ? 'Desactivar' : 'Activar'}</button>
+                          <button type="button" onClick={() => void eliminarPersonal(u)} style={{ padding: '6px 12px', backgroundColor: '#FDECEC', color: '#B42318', border: '1px solid #F5C2C0', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Eliminar</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {vistaActual === 'notificaciones' && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '18px' }}>
+                <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '24px' }}>Notificaciones</h2>
+                <button type="button" onClick={() => void cargarSolicitudesPendientes()} style={btnSecondary}>Actualizar</button>
+              </div>
+              <section style={{ padding: '20px', border: '1px solid #E4E6EF', borderRadius: '8px', backgroundColor: 'white' }}>
+                <div role="tablist" aria-label="Tipo de notificaciones" className="notification-tabs">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={pestanaNotificaciones === 'solicitudes'}
+                    className={pestanaNotificaciones === 'solicitudes' ? 'notification-tab active' : 'notification-tab'}
+                    onClick={() => setPestanaNotificaciones('solicitudes')}
+                  >
+                    Solicitudes <span>{solicitudesAdmin.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={pestanaNotificaciones === 'bultos'}
+                    className={pestanaNotificaciones === 'bultos' ? 'notification-tab active' : 'notification-tab'}
+                    onClick={() => setPestanaNotificaciones('bultos')}
+                  >
+                    Bultos agregados <span>{bultosNotificados.length}</span>
+                  </button>
+                </div>
+                {pestanaNotificaciones === 'solicitudes' ? (
+                  solicitudesAdmin.length === 0
+                    ? <p className="notification-empty">No hay solicitudes pendientes de revisión.</p>
+                    : <div className="notification-list">
+                      {solicitudesAdmin.map((solicitud: any) => (
+                        <article key={solicitud.idSolicitud} className="notification-card">
+                          <div className="notification-card-heading">
+                            <strong>
+                              {solicitud.tipo === 'CANCELACION' ? 'Cancelación' : 'Cambio de dirección'} · {solicitud.codigoTracking}
+                            </strong>
+                            <span>{solicitud.cliente}</span>
+                          </div>
+                          <p><strong>Dirección actual:</strong> {solicitud.direccionActual || 'No registrada'}<br />
+                            <strong>Solicitada:</strong> {solicitud.direccionSolicitada}</p>
+                          {solicitud.respuesta && <p>{solicitud.respuesta}</p>}
+                          <p className="notification-status pending">Estado: {etiquetaEstadoSolicitudAdmin(solicitud.estado)}</p>
+                          {solicitud.estado === 'PENDIENTE' && (
+                            <div className="notification-actions">
+                              <button type="button" onClick={() => {
+                                setComentarioResolucion('');
+                                setSolicitudAResolver({ solicitud, aprobar: true });
+                              }} style={btnPrimary}>Aprobar</button>
+                              <button type="button" onClick={() => {
+                                setComentarioResolucion('');
+                                setSolicitudAResolver({ solicitud, aprobar: false });
+                              }} style={btnLight}>Rechazar</button>
+                            </div>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                ) : (
+                  bultosNotificados.length === 0
+                    ? <p className="notification-empty">No hay bultos adicionales registrados.</p>
+                    : <div className="notification-list">
+                      {bultosNotificados.map((solicitud: any) => (
+                        <article key={solicitud.idSolicitud} className="notification-card">
+                          <div className="notification-card-heading">
+                            <strong>Bulto adicional · {solicitud.codigoTracking}</strong>
+                            <span>{solicitud.cliente}</span>
+                          </div>
+                          <p><strong>Descripción:</strong> {solicitud.descripcionBulto || 'No especificada'}<br />
+                            <strong>Peso:</strong> {solicitud.pesoBulto ?? '—'} kg
+                            {solicitud.montoAdicional != null && Number(solicitud.montoAdicional) > 0 && (
+                              <><br /><strong>Importe adicional:</strong> S/ {Number(solicitud.montoAdicional).toFixed(2)}</>
+                            )}
+                          </p>
+                          {solicitud.respuesta && <p>{solicitud.respuesta}</p>}
+                          <p className={solicitud.estado === 'PENDIENTE' ? 'notification-status pending' : 'notification-status'}>
+                            Estado: {etiquetaEstadoSolicitudAdmin(solicitud.estado)}
+                          </p>
+                          {solicitud.estado === 'PENDIENTE' && (
+                            <div className="notification-actions">
+                              <button type="button" onClick={() => {
+                                setComentarioResolucion('');
+                                setSolicitudAResolver({ solicitud, aprobar: true });
+                              }} style={btnPrimary}>Aprobar</button>
+                              <button type="button" onClick={() => {
+                                setComentarioResolucion('');
+                                setSolicitudAResolver({ solicitud, aprobar: false });
+                              }} style={btnLight}>Rechazar</button>
+                            </div>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                )}
+              </section>
+            </div>
+          )}
+
           {/* =========================================
-              VISTA 4: LISTA DE ENCOMIENDAS 
+              VISTA 4: LISTA DE ENCOMIENDAS
              ========================================= */}
           {vistaActual === 'lista_encomiendas' && (
             <div>
@@ -577,15 +1518,30 @@ export default function Dashboard() {
               )}
               {encomiendaConsultada && (
                 <div style={{ padding: '20px', border: '1px solid #D32F2F', borderRadius: '8px', marginBottom: '25px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                    <h3 style={{ color: '#1E1E2D' }}>Detalle de {encomiendaConsultada.codigoTracking}</h3>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button type="button" onClick={() => imprimirEncomienda(encomiendaConsultada)} style={btnSecondary}>Imprimir / PDF</button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexWrap: 'wrap', gap: '8px' }}>
+                    <h3 style={{ color: '#1E1E2D', margin: 0 }}>Detalle de {encomiendaConsultada.codigoTracking}</h3>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {encomiendaConsultada.estadoLogistico?.toLowerCase() !== 'pendiente de pago'
+                        && encomiendaConsultada.estadoLogistico?.toLowerCase() !== 'cancelado' && (
+                          <button
+                            type="button"
+                            onClick={() => void verComprobanteEncomienda(encomiendaConsultada.codigoTracking)}
+                            style={btnPrimary}
+                          >
+                            Boleta / Factura
+                          </button>
+                        )}
+                      <button type="button" onClick={() => imprimirEncomienda(encomiendaConsultada)} style={btnSecondary}>Imprimir Guía</button>
+                      {puede(rol, 'gestionar_incidencias') && (
+                        <button type="button" onClick={() => abrirReporteIncidencia(encomiendaConsultada.codigoTracking)} style={btnLight}>
+                          Reportar incidencia
+                        </button>
+                      )}
                       <button type="button" onClick={limpiarConsulta} style={btnLight}>Limpiar consulta</button>
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', color: '#3F4254' }}>
-                    <div><strong>Estado:</strong> {encomiendaConsultada.estadoLogistico}</div>
+                    <div><strong>Estado:</strong> {etiquetaEstadoEncomienda(encomiendaConsultada.estadoLogistico)}</div>
                     <div><strong>Peso:</strong> {encomiendaConsultada.peso} Kg</div>
                     <div><strong>Descripción:</strong> {encomiendaConsultada.descripcion}</div>
                     <div><strong>Tarifa:</strong> S/ {Number(encomiendaConsultada.tarifaBase).toFixed(2)}</div>
@@ -595,6 +1551,18 @@ export default function Dashboard() {
                     {encomiendaConsultada.direccionDestinatario && <div><strong>Dirección de entrega:</strong> {encomiendaConsultada.direccionDestinatario}</div>}
                     {encomiendaConsultada.fechaViaje && <div><strong>Viaje:</strong> {encomiendaConsultada.fechaViaje}</div>}
                   </div>
+                  {Array.isArray(encomiendaConsultada.bultos) && encomiendaConsultada.bultos.length > 0 && (
+                    <div style={{ marginTop: '14px', color: '#3F4254' }}>
+                      <strong>Bultos registrados:</strong>
+                      <ul style={{ margin: '6px 0 0', paddingLeft: '20px' }}>
+                        {encomiendaConsultada.bultos.map((bulto: any, index: number) => (
+                          <li key={`${encomiendaConsultada.codigoTracking}-bulto-${index}`}>
+                            {bulto.original ? 'Original' : 'Adicional'}: {bulto.descripcion || 'Sin descripción'} · {bulto.peso} kg
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               )}
               <table style={tableStyle}>
@@ -621,16 +1589,95 @@ export default function Dashboard() {
                       <td style={tdStyle}>{enc.peso} Kg</td>
                       <td style={tdStyle}>
                         <span style={{ backgroundColor: '#E8F5E9', color: '#2E7D32', padding: '4px 8px', borderRadius: '4px', fontSize: '12px' }}>
-                          {enc.estadoLogistico}
+                          {etiquetaEstadoEncomienda(enc.estadoLogistico)}
                         </span>
                       </td>
                       <td style={tdStyle}>
-                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                          {enc.estadoLogistico?.toLowerCase() === 'pendiente de pago' && (
-                            <button type="button" onClick={() => setPagoSeleccionado(enc)} style={{ padding: '6px 12px', backgroundColor: '#D32F2F', color: 'white', border: '1px solid #D32F2F', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                          {puede(rol, 'pagar') && enc.estadoLogistico?.toLowerCase() === 'pendiente de pago' && (
+                            <button type="button" onClick={() => abrirModalPago(enc)} style={{ padding: '6px 12px', backgroundColor: '#D32F2F', color: 'white', border: '1px solid #D32F2F', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>
                               Pagar
                             </button>
                           )}
+                          {enc.estadoLogistico?.toLowerCase() !== 'pendiente de pago'
+                            && enc.estadoLogistico?.toLowerCase() !== 'cancelado' && (
+                              <button
+                                type="button"
+                                disabled={comprobanteCargando === enc.codigoTracking}
+                                onClick={() => void verComprobanteEncomienda(enc.codigoTracking)}
+                                style={{ padding: '6px 10px', backgroundColor: '#EEF2FF', color: '#1D4ED8', border: '1px solid #C7D2FE', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}
+                              >
+                                {comprobanteCargando === enc.codigoTracking ? 'Cargando...' : 'Boleta/Factura'}
+                              </button>
+                            )}
+                          {puede(rol, 'actualizar_estado') && enc.estadoLogistico?.toLowerCase() === 'en tránsito' && (
+                            <button
+                              type="button"
+                              disabled={llegadaConfirmando === enc.codigoTracking}
+                              onClick={() => void confirmarLlegada(enc.codigoTracking)}
+                              style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                            >
+                              {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Llegó a agencia destino'}
+                            </button>
+                          )}
+                          {puede(rol, 'actualizar_estado') && (enc.estadoLogistico?.toLowerCase() === 'llegó a agencia de destino'
+                            || enc.estadoLogistico?.toLowerCase() === 'disponible para recojo'
+                            || enc.estadoLogistico?.toLowerCase() === 'en reparto') && (
+                            <>
+                              {(enc.estadoLogistico?.toLowerCase() === 'llegó a agencia de destino') && (
+                                <>
+                                  <button
+                                    type="button"
+                                    disabled={llegadaConfirmando === enc.codigoTracking}
+                                    onClick={() => void actualizarEstadoDestino(enc.codigoTracking, 'disponible-recojo', 'Disponible para recojo')}
+                                    style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                                  >
+                                    {llegadaConfirmando === enc.codigoTracking ? 'Actualizando...' : 'Disponible para recojo'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={llegadaConfirmando === enc.codigoTracking}
+                                    onClick={() => void actualizarEstadoDestino(enc.codigoTracking, 'iniciar-reparto', 'En reparto')}
+                                    style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                                  >
+                                    {llegadaConfirmando === enc.codigoTracking ? 'Actualizando...' : 'Iniciar reparto'}
+                                  </button>
+                                </>
+                              )}
+                              {enc.estadoLogistico?.toLowerCase() === 'disponible para recojo' && (
+                                <button
+                                  type="button"
+                                  disabled={llegadaConfirmando === enc.codigoTracking}
+                                  onClick={() => abrirConfirmacionEntrega(enc, 'recojo')}
+                                  style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                                >
+                                  {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Confirmar recojo'}
+                                </button>
+                              )}
+                              {enc.estadoLogistico?.toLowerCase() === 'en reparto' && (
+                                <button
+                                  type="button"
+                                  disabled={llegadaConfirmando === enc.codigoTracking}
+                                  onClick={() => abrirConfirmacionEntrega(enc, 'entrega')}
+                                  style={{ padding: '6px 12px', backgroundColor: '#E8F5E9', color: '#2E7D32', border: '1px solid #C8E6C9', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                                >
+                                  {llegadaConfirmando === enc.codigoTracking ? 'Confirmando...' : 'Confirmar entrega'}
+                                </button>
+                              )}
+                            </>
+                          )}
+                          {puede(rol, 'asignar_manifiesto') && enc.estadoLogistico?.toLowerCase() === 'en tránsito' && (
+                            <button
+                              type="button"
+                              disabled={retirandoTracking === enc.codigoTracking}
+                              onClick={() => void retirarEncomiendaDeManifiesto(enc.codigoTracking)}
+                              style={{ padding: '6px 10px', backgroundColor: '#FDECEC', color: '#B42318', border: '1px solid #F5C2C0', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                              title="Retirar encomienda del manifiesto y devolver a En origen"
+                            >
+                              {retirandoTracking === enc.codigoTracking ? 'Retirando...' : 'Retirar de bus'}
+                            </button>
+                          )}
+                          {puede(rol, 'asignar_manifiesto') && (
                           <button
                             type="button"
                             disabled={enc.estadoLogistico?.toLowerCase() !== 'en origen'}
@@ -638,6 +1685,25 @@ export default function Dashboard() {
                             style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: enc.estadoLogistico?.toLowerCase() === 'en origen' ? '#3F4254' : '#B5B5C3', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: enc.estadoLogistico?.toLowerCase() === 'en origen' ? 'pointer' : 'not-allowed' }}
                           >
                             Asignar Manifiesto{enc.estadoLogistico?.toLowerCase() !== 'en origen' ? ' 🔒' : ''}
+                          </button>
+                          )}
+                          {puede(rol, 'gestionar_incidencias') && (
+                            <button
+                              type="button"
+                              onClick={() => abrirReporteIncidencia(enc.codigoTracking)}
+                              style={{ padding: '6px 10px', backgroundColor: '#FFF4E5', color: '#B26A00', border: '1px solid #FFE0B2', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                              title="Reportar incidencia sobre este envío"
+                            >
+                              Incidencia
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => imprimirEncomienda(enc)}
+                            style={{ padding: '6px 10px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                            title="Imprimir o descargar Guía de Encomienda en PDF"
+                          >
+                            Imprimir / PDF
                           </button>
                         </div>
                       </td>
@@ -651,8 +1717,9 @@ export default function Dashboard() {
           {vistaActual === 'lista_manifiestos' && (
             <div style={{ backgroundColor: 'white', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
               <h2 style={{ color: '#1E1E2D', marginTop: 0 }}>Manifiestos de Carga</h2>
+              {puede(rol, 'crear_manifiestos') && (
               <form onSubmit={crearManifiesto} style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr) auto', gap: '12px', alignItems: 'end', marginBottom: '30px' }}>
-                <div><label style={labelStyle}>N° de bus</label><input required value={manifiestoForm.numBus} onChange={e => setManifiestoForm({ ...manifiestoForm, numBus: e.target.value })} style={inputStyle} placeholder="BUS-01" /></div>
+                <div><label style={labelStyle}>N° de bus</label><input required maxLength={20} value={manifiestoForm.numBus} onChange={e => setManifiestoForm({ ...manifiestoForm, numBus: e.target.value })} style={inputStyle} placeholder="BUS-01" /></div>
                 <div>
                   <label style={labelStyle}>Ruta</label>
                   <select required value={manifiestoForm.ruta} onChange={e => setManifiestoForm({ ...manifiestoForm, ruta: e.target.value })} style={inputStyle}>
@@ -662,8 +1729,14 @@ export default function Dashboard() {
                 </div>
                 <div><label style={labelStyle}>Fecha de viaje</label><input required type="date" value={manifiestoForm.fechaViaje} onChange={e => setManifiestoForm({ ...manifiestoForm, fechaViaje: e.target.value })} style={inputStyle} /></div>
                 <div><label style={labelStyle}>Capacidad (Kg)</label><input required type="number" min="1" step="0.01" value={manifiestoForm.capacidadKg} onChange={e => setManifiestoForm({ ...manifiestoForm, capacidadKg: e.target.value })} style={inputStyle} /></div>
-                <button type="submit" style={btnPrimary}>Crear</button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button type="submit" style={btnPrimary}>{manifiestoEditando === null ? 'Crear' : 'Guardar cambios'}</button>
+                  {manifiestoEditando !== null && (
+                    <button type="button" onClick={cancelarEdicionManifiesto} style={btnLight}>Cancelar</button>
+                  )}
+                </div>
               </form>
+              )}
               <table style={tableStyle}>
                 <thead>
                   <tr>
@@ -686,7 +1759,28 @@ export default function Dashboard() {
                       <td style={tdStyle}>{Number(m.pesoTotalCarga || 0).toFixed(2)} / {Number(m.capacidadKg || 0).toFixed(2)} Kg</td>
                       <td style={tdStyle}>{m.encomiendas.length}</td>
                       <td style={tdStyle}>
-                        <button type="button" onClick={() => imprimirManifiesto(m)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Imprimir / PDF</button>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          <button
+                            type="button"
+                            onClick={() => setManifiestoDetalle(m)}
+                            style={{ padding: '6px 12px', backgroundColor: '#EEF2FF', color: '#1D4ED8', border: '1px solid #C7D2FE', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}
+                          >
+                            Ver bultos ({m.encomiendas.length})
+                          </button>
+                          {puede(rol, 'crear_manifiestos') && (<>
+                          <button type="button" onClick={() => editarManifiesto(m)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Editar</button>
+                          <button
+                            type="button"
+                            onClick={() => void eliminarManifiesto(m)}
+                            disabled={(m.encomiendas?.length ?? 0) > 0}
+                            title={(m.encomiendas?.length ?? 0) > 0 ? 'No se puede eliminar: tiene encomiendas asignadas' : 'Eliminar manifiesto'}
+                            style={{ padding: '6px 12px', backgroundColor: (m.encomiendas?.length ?? 0) > 0 ? '#F3F6F9' : '#FDECEC', color: (m.encomiendas?.length ?? 0) > 0 ? '#B5B5C3' : '#B42318', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: (m.encomiendas?.length ?? 0) > 0 ? 'not-allowed' : 'pointer' }}
+                          >
+                            Eliminar
+                          </button>
+                          </>)}
+                          <button type="button" onClick={() => imprimirManifiesto(m)} style={{ padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Imprimir / PDF</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -696,11 +1790,359 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* =========================================
+              VISTA 6: INCIDENCIAS OPERATIVAS
+             ========================================= */}
+          {vistaActual === 'incidencias' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '24px' }}>Gestión de Incidencias</h2>
+                  <p style={{ color: '#6B7280', margin: '4px 0 0', fontSize: '13px' }}>
+                    Registra percances en almacén, viaje o reparto. Cada reporte y resolución se anota automáticamente en el historial de tracking del envío.
+                  </p>
+                </div>
+                <button type="button" onClick={() => void cargarIncidencias()} style={btnSecondary}>Actualizar</button>
+              </div>
+
+              <form onSubmit={reportarIncidencia} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', padding: '20px', backgroundColor: '#F8F9FA', borderRadius: '10px', border: '1px solid #E4E6EF', marginBottom: '25px' }}>
+                <div style={{ gridColumn: '1 / -1', fontWeight: 700, color: '#1E1E2D' }}>Reportar nueva incidencia</div>
+                <div>
+                  <label style={labelStyle}>Código de Tracking</label>
+                  <input
+                    required
+                    maxLength={13}
+                    placeholder="PERU-XXXXXXXX"
+                    value={incidenciaForm.codigoTracking}
+                    onChange={e => setIncidenciaForm({ ...incidenciaForm, codigoTracking: e.target.value.replace(/[^a-zA-Z0-9-]/g, '').toUpperCase() })}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={labelStyle}>Tipo de problema</label>
+                  <select
+                    required
+                    value={incidenciaForm.tipoProblema}
+                    onChange={e => setIncidenciaForm({ ...incidenciaForm, tipoProblema: e.target.value })}
+                    style={inputStyle}
+                  >
+                    <option value="Retraso en ruta">Retraso en ruta</option>
+                    <option value="Paquete dañado / observación de embalaje">Paquete dañado / observación de embalaje</option>
+                    <option value="Destinatario ausente en reparto">Destinatario ausente en reparto</option>
+                    <option value="Dirección incorrecta o inaccesible">Dirección incorrecta o inaccesible</option>
+                    <option value="Bulto extraviado o incompleto">Bulto extraviado o incompleto</option>
+                    <option value="Falla mecánica de unidad">Falla mecánica de unidad</option>
+                    <option value="Otro incidente operativo">Otro incidente operativo</option>
+                  </select>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={labelStyle}>Descripción detallada del incidente</label>
+                  <textarea
+                    required
+                    rows={3}
+                    maxLength={1000}
+                    placeholder="Detalla qué ocurrió, ubicación o medidas iniciales tomadas..."
+                    value={incidenciaForm.descripcion}
+                    onChange={e => setIncidenciaForm({ ...incidenciaForm, descripcion: e.target.value })}
+                    style={inputStyle}
+                  />
+                </div>
+                <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button type="submit" disabled={incidenciaEnviando} style={btnPrimary}>
+                    {incidenciaEnviando ? 'Registrando...' : 'Registrar incidencia'}
+                  </button>
+                </div>
+              </form>
+
+              <div className="notification-tabs" role="tablist">
+                {(['TODAS', 'ABIERTA', 'RESUELTA'] as const).map(f => {
+                  const totalFiltro = f === 'TODAS'
+                    ? listaIncidencias.length
+                    : listaIncidencias.filter((inc: any) => (inc.estado || 'ABIERTA') === f).length;
+                  return (
+                    <button
+                      key={f}
+                      type="button"
+                      role="tab"
+                      aria-selected={filtroIncidencias === f}
+                      className={filtroIncidencias === f ? 'notification-tab active' : 'notification-tab'}
+                      onClick={() => setFiltroIncidencias(f)}
+                    >
+                      {f === 'TODAS' ? 'Todas' : f === 'ABIERTA' ? 'Abiertas' : 'Resueltas'} <span>{totalFiltro}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {(() => {
+                const filtradas = filtroIncidencias === 'TODAS'
+                  ? listaIncidencias
+                  : listaIncidencias.filter((inc: any) => (inc.estado || 'ABIERTA') === filtroIncidencias);
+                if (filtradas.length === 0) {
+                  return <p style={{ color: '#777' }}>No hay incidencias registradas en esta categoría.</p>;
+                }
+                return (
+                  <div className="notification-list">
+                    {filtradas.map((inc: any) => {
+                      const abierta = (inc.estado || 'ABIERTA') !== 'RESUELTA';
+                      return (
+                        <article key={inc.idIncidencia} className="notification-card">
+                          <div className="notification-card-heading">
+                            <div>
+                              <strong style={{ fontSize: '14px' }}>#{inc.idIncidencia} · {inc.tipoProblema}</strong>
+                              <span style={{ marginLeft: '10px', color: '#D32F2F', fontWeight: 700 }}>{inc.codigoTracking || 'Sin tracking'}</span>
+                              {inc.ruta && <span style={{ marginLeft: '8px', fontSize: '12px' }}>({inc.ruta})</span>}
+                            </div>
+                            <span style={{
+                              backgroundColor: abierta ? '#FFF4E5' : '#E8F5E9',
+                              color: abierta ? '#B26A00' : '#2E7D32',
+                              padding: '4px 10px',
+                              borderRadius: '999px',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                            }}>
+                              {abierta ? 'ABIERTA' : 'RESUELTA'}
+                            </span>
+                          </div>
+                          <p style={{ marginTop: '8px' }}><strong>Reporte:</strong> {inc.descripcion}</p>
+                          <p style={{ fontSize: '12px', color: '#6B7280' }}>
+                            Fecha de reporte: {inc.fechaReporte ? new Date(inc.fechaReporte).toLocaleString('es-PE') : '—'}
+                            {inc.estadoEncomienda && ` · Estado actual del envío: ${etiquetaEstadoEncomienda(inc.estadoEncomienda)}`}
+                          </p>
+                          {inc.resolucion && (
+                            <div style={{ marginTop: '8px', padding: '10px 12px', backgroundColor: '#F3FAF5', borderRadius: '6px', borderLeft: '3px solid #2E7D32' }}>
+                              <strong>Solución aplicada:</strong> {inc.resolucion}
+                              {inc.fechaResolucion && (
+                                <div style={{ fontSize: '11px', color: '#6B7280', marginTop: '4px' }}>
+                                  Resuelta el {new Date(inc.fechaResolucion).toLocaleString('es-PE')}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {abierta && (
+                            <div className="notification-actions" style={{ marginTop: '10px' }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setResolucionTexto('');
+                                  setIncidenciaAResolver(inc);
+                                }}
+                                style={{ ...btnPrimary, padding: '8px 14px', fontSize: '13px' }}
+                              >
+                                Marcar como resuelta
+                              </button>
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* =========================================
+              VISTA 7: PANEL DE ESTADÍSTICAS Y REPORTES
+             ========================================= */}
+          {vistaActual === 'estadisticas' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '24px' }}>Panel de Estadísticas y Reportes</h2>
+                  <p style={{ color: '#6B7280', margin: '4px 0 0', fontSize: '13px' }}>
+                    Indicadores operativos, facturación electrónica (Boletas y Facturas) y rendimiento por ruta.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => void cargarEstadisticas()} style={btnSecondary}>
+                    {estadisticasCargando ? 'Actualizando...' : 'Actualizar'}
+                  </button>
+                  <button type="button" disabled={!estadisticas} onClick={exportarEstadisticasCsv} style={btnPrimary}>
+                    Exportar CSV (Excel)
+                  </button>
+                </div>
+              </div>
+
+              {!estadisticas ? (
+                <p style={{ color: '#777' }}>{estadisticasCargando ? 'Cargando indicadores...' : 'No se pudieron cargar las estadísticas.'}</p>
+              ) : (
+                <div style={{ display: 'grid', gap: '24px' }}>
+                  {/* Tarjetas KPI */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px' }}>
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #D32F2F' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Ingresos Totales (c/ IGV)</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        S/ {Number(estadisticas.ingresosTotales || 0).toFixed(2)}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        Subtotal: S/ {Number(estadisticas.ingresosSubtotal || 0).toFixed(2)} · IGV: S/ {Number(estadisticas.ingresosIgv || 0).toFixed(2)}
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #102B50' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Total Encomiendas</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        {estadisticas.totalEncomiendas}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#2E7D32', marginTop: '4px' }}>
+                        {estadisticas.encomiendasEntregadas} entregadas · {estadisticas.encomiendasEnCurso} en curso · {estadisticas.encomiendasPendientesPago} por pagar
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #2E7D32' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Comprobantes Emitidos</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        {estadisticas.totalComprobantes}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        Boletas (B001): <strong>{estadisticas.totalBoletas}</strong> · Facturas (F001): <strong>{estadisticas.totalFacturas}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #1D4ED8' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Carga y Flota</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        {Number(estadisticas.pesoTotalTransportadoKg || 0).toFixed(2)} Kg
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        {estadisticas.totalManifiestos} manifiestos · Ocupación media: <strong>{estadisticas.ocupacionPromedioBuses}%</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #7C3AED' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Cartera de Clientes</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        {estadisticas.totalClientes}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        Con acceso activo al portal: <strong>{estadisticas.clientesConPortalActivo}</strong>
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '18px', borderRadius: '10px', border: '1px solid #E4E6EF', backgroundColor: '#F8FAFC', borderLeft: '4px solid #D97706' }}>
+                      <div style={{ fontSize: '12px', color: '#6B7280', fontWeight: 700, textTransform: 'uppercase' }}>Atención e Incidencias</div>
+                      <div style={{ fontSize: '24px', fontWeight: 800, color: '#1E1E2D', marginTop: '6px' }}>
+                        {estadisticas.incidenciasAbiertas} abiertas
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#6B7280', marginTop: '4px' }}>
+                        {estadisticas.incidenciasResueltas} resueltas · {estadisticas.solicitudesPendientes} solicitudes pendientes
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Rendimiento por Ruta */}
+                  <div style={{ padding: '20px', border: '1px solid #E4E6EF', borderRadius: '10px' }}>
+                    <h3 style={{ marginTop: 0, marginBottom: '12px', color: '#1E1E2D' }}>Rendimiento e Ingresos por Ruta</h3>
+                    <table style={tableStyle}>
+                      <thead>
+                        <tr>
+                          <th style={thStyle}>Ruta</th>
+                          <th style={thStyle}>Envíos</th>
+                          <th style={thStyle}>Peso Total</th>
+                          <th style={thStyle}>Subtotal</th>
+                          <th style={thStyle}>Total (c/ IGV)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(estadisticas.porRuta || []).map((r: any) => (
+                          <tr key={r.ruta} style={trStyle}>
+                            <td style={{ ...tdStyle, fontWeight: 700 }}>{r.ruta}</td>
+                            <td style={tdStyle}>{r.cantidadEncomiendas}</td>
+                            <td style={tdStyle}>{Number(r.pesoTotalKg || 0).toFixed(2)} Kg</td>
+                            <td style={tdStyle}>S/ {Number(r.ingresosSubtotal || 0).toFixed(2)}</td>
+                            <td style={{ ...tdStyle, fontWeight: 700, color: '#2E7D32' }}>S/ {Number(r.ingresosTotal || 0).toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Distribución por Estado Logístico */}
+                  <div style={{ padding: '20px', border: '1px solid #E4E6EF', borderRadius: '10px' }}>
+                    <h3 style={{ marginTop: 0, marginBottom: '14px', color: '#1E1E2D' }}>Distribución por Estado Logístico</h3>
+                    <div style={{ display: 'grid', gap: '10px' }}>
+                      {(estadisticas.porEstado || []).map((item: any) => (
+                        <div key={item.estado}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                            <strong>{etiquetaEstadoEncomienda(item.estado)}</strong>
+                            <span>{item.cantidad} envío(s) ({item.porcentaje}%)</span>
+                          </div>
+                          <div style={{ height: '8px', backgroundColor: '#EDF2F7', borderRadius: '999px', overflow: 'hidden' }}>
+                            <div style={{ width: `${Math.min(100, item.porcentaje)}%`, height: '100%', backgroundColor: '#D32F2F', borderRadius: '999px' }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Últimos Comprobantes Emitidos */}
+                  {Array.isArray(estadisticas.ultimosComprobantes) && estadisticas.ultimosComprobantes.length > 0 && (
+                    <div style={{ padding: '20px', border: '1px solid #E4E6EF', borderRadius: '10px' }}>
+                      <h3 style={{ marginTop: 0, marginBottom: '12px', color: '#1E1E2D' }}>Últimos Comprobantes Emitidos</h3>
+                      <table style={tableStyle}>
+                        <thead>
+                          <tr>
+                            <th style={thStyle}>Serie / N°</th>
+                            <th style={thStyle}>Tipo</th>
+                            <th style={thStyle}>Tracking</th>
+                            <th style={thStyle}>Cliente</th>
+                            <th style={thStyle}>Total</th>
+                            <th style={thStyle}>Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {estadisticas.ultimosComprobantes.map((comp: any) => (
+                            <tr key={comp.idComprobante || comp.numeroSerie} style={trStyle}>
+                              <td style={{ ...tdStyle, fontWeight: 700, fontFamily: 'monospace' }}>{comp.numeroSerie}</td>
+                              <td style={tdStyle}>{comp.tipoComprobante}</td>
+                              <td style={{ ...tdStyle, color: '#D32F2F', fontWeight: 600 }}>{comp.codigoTracking}</td>
+                              <td style={tdStyle}>{comp.clienteNombre} ({comp.clienteDocumento})</td>
+                              <td style={{ ...tdStyle, fontWeight: 700 }}>S/ {Number(comp.montoTotal || 0).toFixed(2)}</td>
+                              <td style={tdStyle}>
+                                <button
+                                  type="button"
+                                  onClick={() => setComprobanteVista(comp)}
+                                  style={btnMini}
+                                >
+                                  Ver / Imprimir
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
     </div>
+    {credenciales && (
+      <div className="no-print" style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}>
+        <section role="dialog" aria-modal="true" style={{ width: '100%', maxWidth: '460px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}>
+          <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>{credenciales.accion === 'RESTABLECIDO' ? 'Clave restablecida' : 'Acceso al portal generado'}</h2>
+          <p style={{ margin: '6px 0 16px', color: '#777' }}>{credenciales.nombre}</p>
+          <div style={{ background: '#F8F9FA', border: '1px dashed #D32F2F', borderRadius: '8px', padding: '16px', display: 'grid', gap: '12px' }}>
+            <div><span style={{ color: '#888', fontSize: '12px' }}>Usuario (documento)</span><br /><strong style={{ fontSize: '18px' }}>{credenciales.numDocumento}</strong></div>
+            <div><span style={{ color: '#888', fontSize: '12px' }}>Clave temporal</span><br /><strong style={{ fontSize: '22px', letterSpacing: '2px', fontFamily: 'monospace' }}>{credenciales.passwordTemporal}</strong></div>
+          </div>
+          <p style={{ fontSize: '12px', color: '#B26A00', lineHeight: 1.5 }}>
+            Entrégala al cliente en persona. No se volverá a mostrar y deberá cambiarla en su primer ingreso al portal.
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+            <button type="button" onClick={() => void navigator.clipboard?.writeText(`Usuario: ${credenciales.numDocumento}\nClave temporal: ${credenciales.passwordTemporal}`)} style={btnMini}>Copiar</button>
+            <button type="button" onClick={() => setCredenciales(null)} style={{ padding: '10px 14px', backgroundColor: '#D32F2F', color: 'white', border: 0, borderRadius: '4px', fontWeight: 600, cursor: 'pointer' }}>Listo</button>
+          </div>
+        </section>
+      </div>
+    )}
     {encomiendaAAsignar && (
-      <div onClick={() => !asignando && setEncomiendaAAsignar(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}>
+      <div className="no-print" onClick={() => !asignando && setEncomiendaAAsignar(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}>
         <section role="dialog" aria-modal="true" onClick={event => event.stopPropagation()} style={{ width: '100%', maxWidth: '460px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}>
           <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>Asignar a manifiesto</h2>
           <p style={{ margin: '6px 0 16px', color: '#777' }}>Encomienda {encomiendaAAsignar.codigoTracking} · {encomiendaAAsignar.peso} Kg · Ruta: <strong>{encomiendaAAsignar.ruta || 'sin ruta'}</strong></p>
@@ -771,8 +2213,11 @@ export default function Dashboard() {
       const subtotal = Number(pagoSeleccionado.tarifaBase || 0);
       const igv = Math.round((subtotal * 0.18 + Number.EPSILON) * 100) / 100;
       const total = subtotal + igv;
+      const docRemitente = pagoSeleccionado.remitente?.numDocumento || '';
+      const tieneRuc = docRemitente.length === 11;
       return (
         <div
+          className="no-print"
           onClick={() => !pagoProcesando && setPagoSeleccionado(null)}
           style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}
         >
@@ -781,32 +2226,398 @@ export default function Dashboard() {
             aria-modal="true"
             aria-labelledby="pago-title"
             onClick={event => event.stopPropagation()}
-            style={{ width: '100%', maxWidth: '460px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}
+            style={{ width: '100%', maxWidth: '480px', backgroundColor: 'white', borderRadius: '8px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '16px', marginBottom: '20px' }}>
               <div>
-                <h2 id="pago-title" style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>Simular pago</h2>
+                <h2 id="pago-title" style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>Emitir Comprobante y Registrar Pago</h2>
                 <p style={{ margin: '6px 0 0', color: '#777' }}>Encomienda {pagoSeleccionado.codigoTracking}</p>
               </div>
               <button type="button" aria-label="Cerrar" title="Cerrar" disabled={pagoProcesando} onClick={() => setPagoSeleccionado(null)} style={{ border: 0, background: 'transparent', fontSize: '22px', color: '#666', cursor: 'pointer' }}>×</button>
             </div>
-            <div style={{ display: 'grid', gap: '12px', padding: '16px 0', borderTop: '1px solid #E4E6EF', borderBottom: '1px solid #E4E6EF' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}><span>Cliente</span><strong>{pagoSeleccionado.remitente?.nombres} {pagoSeleccionado.remitente?.apellidos}</strong></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Descripción</span><strong>{pagoSeleccionado.descripcion || 'Encomienda'}</strong></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Subtotal</span><strong>S/ {subtotal.toFixed(2)}</strong></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>IGV (18%)</span><strong>S/ {igv.toFixed(2)}</strong></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', color: '#1E1E2D' }}><strong>Total</strong><strong>S/ {total.toFixed(2)}</strong></div>
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Tipo de Comprobante Electrónico</label>
+              <select
+                value={tipoComprobantePago}
+                onChange={e => setTipoComprobantePago(e.target.value as 'BOLETA' | 'FACTURA')}
+                style={inputStyle}
+              >
+                <option value="BOLETA">Boleta de Venta Electrónica (B001)</option>
+                <option value="FACTURA" disabled={!tieneRuc}>
+                  Factura Electrónica (F001) {!tieneRuc ? '— Requiere RUC de 11 dígitos' : ''}
+                </option>
+              </select>
             </div>
-            <p style={{ fontSize: '12px', color: '#777', lineHeight: 1.5 }}>Pago simulado. Se guardará el desglose y la fecha para la futura emisión del comprobante.</p>
+            <div style={{ display: 'grid', gap: '12px', padding: '16px 0', borderTop: '1px solid #E4E6EF', borderBottom: '1px solid #E4E6EF' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}><span>Cliente ({docRemitente || 'S/D'})</span><strong>{pagoSeleccionado.remitente?.nombres} {pagoSeleccionado.remitente?.apellidos}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Descripción</span><strong>{pagoSeleccionado.descripcion || 'Encomienda'}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Op. Gravada (Subtotal)</span><strong>S/ {subtotal.toFixed(2)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>IGV (18%)</span><strong>S/ {igv.toFixed(2)}</strong></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', color: '#1E1E2D' }}><strong>Importe Total</strong><strong>S/ {total.toFixed(2)}</strong></div>
+            </div>
+            <p style={{ fontSize: '12px', color: '#777', lineHeight: 1.5 }}>Se emitirá el comprobante electrónico con serie correlativa y podrás imprimirlo de inmediato.</p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
               <button type="button" disabled={pagoProcesando} onClick={() => setPagoSeleccionado(null)} style={{ padding: '10px 14px', backgroundColor: 'white', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', cursor: pagoProcesando ? 'not-allowed' : 'pointer' }}>Cancelar</button>
-              <button type="button" disabled={pagoProcesando} onClick={confirmarPago} style={{ padding: '10px 14px', backgroundColor: '#D32F2F', color: 'white', border: 0, borderRadius: '4px', fontWeight: 600, cursor: pagoProcesando ? 'wait' : 'pointer' }}>{pagoProcesando ? 'Procesando...' : 'Confirmar pago'}</button>
+              <button type="button" disabled={pagoProcesando} onClick={confirmarPago} style={{ padding: '10px 14px', backgroundColor: '#D32F2F', color: 'white', border: 0, borderRadius: '4px', fontWeight: 600, cursor: pagoProcesando ? 'wait' : 'pointer' }}>{pagoProcesando ? 'Procesando...' : 'Confirmar pago y emitir'}</button>
             </div>
           </section>
         </div>
       );
     })()}
-    {!manifiestoImprimir && (encomiendaImprimir || encomiendaConsultada || resumenRegistrado) && (() => {
+    {comprobanteVista && (
+      <div
+        className="no-print"
+        onClick={() => setComprobanteVista(null)}
+        style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          onClick={event => event.stopPropagation()}
+          style={{ width: '100%', maxWidth: '520px', backgroundColor: 'white', borderRadius: '10px', padding: '28px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', borderBottom: '2px solid #1E1E2D', paddingBottom: '14px', marginBottom: '16px' }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: '18px', color: '#1E1E2D' }}>PERUBUS CARGO S.A.C.</div>
+              <div style={{ fontSize: '12px', color: '#6B7280' }}>RUC: 20100070970 · Av. México 333, La Victoria, Lima</div>
+            </div>
+            <div style={{ border: '1px solid #D32F2F', borderRadius: '6px', padding: '8px 12px', textAlign: 'center' }}>
+              <div style={{ fontSize: '11px', fontWeight: 800, color: '#D32F2F' }}>
+                {comprobanteVista.tipoComprobante === 'FACTURA' ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA ELECTRÓNICA'}
+              </div>
+              <div style={{ fontSize: '15px', fontWeight: 800, fontFamily: 'monospace', color: '#1E1E2D' }}>
+                {comprobanteVista.numeroSerie}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: '8px', fontSize: '13px', marginBottom: '16px' }}>
+            <div><strong>Cliente / Razón Social:</strong> {comprobanteVista.clienteNombre || 'Cliente'}</div>
+            <div><strong>{comprobanteVista.tipoComprobante === 'FACTURA' ? 'RUC' : 'DNI / Doc.'}:</strong> {comprobanteVista.clienteDocumento || '—'}</div>
+            <div><strong>Fecha de emisión:</strong> {comprobanteVista.fechaEmision ? new Date(comprobanteVista.fechaEmision).toLocaleString('es-PE') : new Date().toLocaleDateString('es-PE')}</div>
+            <div><strong>Código de Tracking:</strong> {comprobanteVista.codigoTracking} · <strong>Ruta:</strong> {comprobanteVista.ruta || '—'}</div>
+            {comprobanteVista.destinatarioNombre && <div><strong>Destinatario:</strong> {comprobanteVista.destinatarioNombre}</div>}
+          </div>
+
+          <div style={{ padding: '12px', backgroundColor: '#F8F9FA', borderRadius: '8px', border: '1px solid #E4E6EF', marginBottom: '16px', fontSize: '13px' }}>
+            <div style={{ fontWeight: 700, marginBottom: '6px', color: '#1E1E2D' }}>Detalle del servicio</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Servicio de transporte de encomienda: {comprobanteVista.descripcionEncomienda || 'Carga general'} ({comprobanteVista.pesoTotal ?? '—'} Kg)</span>
+              <strong>S/ {Number(comprobanteVista.montoSubtotal || 0).toFixed(2)}</strong>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gap: '6px', borderTop: '1px solid #E4E6EF', paddingTop: '12px', fontSize: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Op. Gravada (Subtotal)</span><strong>S/ {Number(comprobanteVista.montoSubtotal || 0).toFixed(2)}</strong></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>IGV (18%)</span><strong>S/ {Number(comprobanteVista.montoIgv || 0).toFixed(2)}</strong></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', color: '#D32F2F', marginTop: '4px' }}>
+              <strong>IMPORTE TOTAL</strong>
+              <strong>S/ {Number(comprobanteVista.montoTotal || 0).toFixed(2)}</strong>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+            <button type="button" onClick={() => setComprobanteVista(null)} style={btnLight}>Cerrar</button>
+            <button type="button" onClick={() => imprimirComprobantePago(comprobanteVista)} style={btnPrimary}>Imprimir / Descargar PDF</button>
+          </div>
+        </section>
+      </div>
+    )}
+    {incidenciaAResolver && (
+      <ConfirmacionModal
+        titulo={`Resolver incidencia #${incidenciaAResolver.idIncidencia}`}
+        mensaje={`¿Marcar como resuelta la incidencia de "${incidenciaAResolver.tipoProblema}" correspondiente al envío ${incidenciaAResolver.codigoTracking}?`}
+        textoConfirmar="Confirmar solución"
+        procesando={confirmacionProcesando}
+        onCancelar={() => setIncidenciaAResolver(null)}
+        onConfirmar={() => void confirmarResolverIncidencia()}
+      >
+        <label className="confirmation-comment">
+          Acción tomada / solución aplicada (obligatorio)
+          <textarea
+            maxLength={1000}
+            required
+            value={resolucionTexto}
+            onChange={e => setResolucionTexto(e.target.value)}
+            rows={3}
+            placeholder="Ej: Se reprogramó la entrega con el destinatario y se verificó el estado del paquete..."
+          />
+        </label>
+      </ConfirmacionModal>
+    )}
+    {(comprobanteImprimir || comprobanteVista) && (() => {
+      const comp = comprobanteImprimir || comprobanteVista;
+      if (!comp) return null;
+      return (
+        <div className="comprobante-impresion">
+          <div className="comprobante-cabecera-doc">
+            <div className="comprobante-empresa">
+              <h1>PERUBUS CARGO S.A.C.</h1>
+              <p><strong>RUC:</strong> 20100070970</p>
+              <p><strong>Dirección Fiscal:</strong> Av. México 333, La Victoria — Lima, Perú</p>
+              <p><strong>Servicio:</strong> Transporte Interprovincial de Carga y Encomiendas (Lima · Pisco · Ica · Nazca)</p>
+            </div>
+            <div className="comprobante-recuadro-sunat">
+              <div className="ruc">R.U.C. 20100070970</div>
+              <div className="tipo">
+                {comp.tipoComprobante === 'FACTURA' ? 'FACTURA ELECTRÓNICA' : 'BOLETA DE VENTA ELECTRÓNICA'}
+              </div>
+              <div className="serie">{comp.numeroSerie}</div>
+            </div>
+          </div>
+
+          <div className="comprobante-grid-datos">
+            <div><strong>Señor(es) / Razón Social:</strong> {comp.clienteNombre || 'Cliente'}</div>
+            <div><strong>Fecha de Emisión:</strong> {comp.fechaEmision ? new Date(comp.fechaEmision).toLocaleString('es-PE') : new Date().toLocaleDateString('es-PE')}</div>
+            <div><strong>{comp.tipoComprobante === 'FACTURA' ? 'RUC del Cliente' : 'DNI / Documento'}:</strong> {comp.clienteDocumento || '—'}</div>
+            <div><strong>Moneda / Condición:</strong> SOLES (PEN) · CONTADO</div>
+            <div><strong>Código de Tracking:</strong> {comp.codigoTracking}</div>
+            <div><strong>Ruta de Envío:</strong> {comp.ruta || '—'}</div>
+            {comp.destinatarioNombre && (
+              <div style={{ gridColumn: '1 / -1' }}><strong>Destinatario consignado:</strong> {comp.destinatarioNombre}</div>
+            )}
+          </div>
+
+          <table className="comprobante-tabla">
+            <thead>
+              <tr>
+                <th>Cant.</th>
+                <th>Unidad</th>
+                <th>Código</th>
+                <th>Descripción del Servicio</th>
+                <th>Peso</th>
+                <th>Valor Unit.</th>
+                <th>Importe</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>1</td>
+                <td>ZZ (Servicio)</td>
+                <td>{comp.codigoTracking}</td>
+                <td>Servicio de transporte de encomienda: {comp.descripcionEncomienda || 'Carga general'} ({comp.ruta || 'Ruta interprovincial'})</td>
+                <td>{Number(comp.pesoTotal || 0).toFixed(2)} Kg</td>
+                <td>S/ {Number(comp.montoSubtotal || 0).toFixed(2)}</td>
+                <td>S/ {Number(comp.montoSubtotal || 0).toFixed(2)}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div className="comprobante-totales">
+            <div><span>Op. Gravada (Subtotal):</span><strong>S/ {Number(comp.montoSubtotal || 0).toFixed(2)}</strong></div>
+            <div><span>I.G.V. (18%):</span><strong>S/ {Number(comp.montoIgv || 0).toFixed(2)}</strong></div>
+            <div className="total-final"><span>IMPORTE TOTAL:</span><strong>S/ {Number(comp.montoTotal || 0).toFixed(2)}</strong></div>
+          </div>
+
+          <p className="ticket-pie" style={{ marginTop: '18px' }}>
+            Representación impresa de la {comp.tipoComprobante === 'FACTURA' ? 'Factura Electrónica' : 'Boleta de Venta Electrónica'}. Conserve este documento y su código de tracking ({comp.codigoTracking}) para el seguimiento y entrega de su encomienda.
+          </p>
+        </div>
+      );
+    })()}
+    {entregaAConfirmar && (() => {
+      const { encomienda, tipo } = entregaAConfirmar;
+      const destNombre = `${encomienda.destinatario?.nombres || ''} ${encomienda.destinatario?.apellidos || ''}`.trim() || 'No especificado';
+      const destDoc = encomienda.destinatario?.numDocumento || 'Sin documento';
+      return (
+        <div
+          className="no-print"
+          onClick={() => !llegadaConfirmando && setEntregaAConfirmar(null)}
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            onClick={e => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: '480px', backgroundColor: 'white', borderRadius: '10px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '16px', marginBottom: '16px' }}>
+              <div>
+                <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>
+                  Verificar DNI para {tipo === 'recojo' ? 'Recojo en Agencia' : 'Entrega a Domicilio'}
+                </h2>
+                <p style={{ margin: '6px 0 0', color: '#777', fontSize: '13px' }}>
+                  Encomienda <strong>{encomienda.codigoTracking}</strong> · {encomienda.descripcion || 'Carga'} ({encomienda.peso} Kg)
+                </p>
+              </div>
+              <button type="button" disabled={!!llegadaConfirmando} onClick={() => setEntregaAConfirmar(null)} style={{ border: 0, background: 'transparent', fontSize: '22px', color: '#666', cursor: 'pointer' }}>×</button>
+            </div>
+
+            <div style={{ padding: '12px 14px', backgroundColor: '#F8FAFC', borderRadius: '8px', border: '1px solid #E4E6EF', marginBottom: '16px', fontSize: '13px' }}>
+              <div><span style={{ color: '#6B7280' }}>Destinatario titular registrado:</span></div>
+              <div style={{ fontWeight: 700, color: '#1E1E2D', marginTop: '2px' }}>{destNombre} — Doc: {destDoc}</div>
+            </div>
+
+            <form onSubmit={ejecutarConfirmarEntrega} style={{ display: 'grid', gap: '14px' }}>
+              <div>
+                <label style={labelStyle}>DNI (8 dígitos) o RUC (11 dígitos) de quien recibe</label>
+                <input
+                  required
+                  maxLength={11}
+                  placeholder="Ingresa el DNI o RUC físico presentado"
+                  value={dniReceptor}
+                  onChange={e => void manejarDniEntrega(e.target.value, encomienda)}
+                  style={inputStyle}
+                />
+                {avisoDniEntrega && (
+                  <div style={{
+                    marginTop: '6px',
+                    padding: '8px 10px',
+                    borderRadius: '6px',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    backgroundColor: avisoDniEntrega.ok ? '#E8F5E9' : '#FFF4E5',
+                    color: avisoDniEntrega.ok ? '#2E7D32' : '#B26A00',
+                  }}>
+                    {avisoDniEntrega.texto}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label style={labelStyle}>Nombre completo de quien recibe</label>
+                <input
+                  required
+                  maxLength={120}
+                  placeholder="Nombres y apellidos del receptor"
+                  value={nombreReceptor}
+                  onChange={e => setNombreReceptor(e.target.value)}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+                <button type="button" disabled={!!llegadaConfirmando} onClick={() => setEntregaAConfirmar(null)} style={btnLight}>
+                  Cancelar
+                </button>
+                <button type="submit" disabled={!!llegadaConfirmando} style={btnPrimary}>
+                  {llegadaConfirmando ? 'Confirmando...' : `Confirmar ${tipo === 'recojo' ? 'recojo' : 'entrega'}`}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      );
+    })()}
+    {manifiestoDetalle && (
+      <div
+        className="no-print"
+        onClick={() => !retirandoTracking && setManifiestoDetalle(null)}
+        style={{ position: 'fixed', inset: 0, zIndex: 1000, backgroundColor: 'rgba(20, 24, 32, 0.58)', display: 'grid', placeItems: 'center', padding: '20px' }}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          onClick={e => e.stopPropagation()}
+          style={{ width: '100%', maxWidth: '680px', maxHeight: '85vh', overflowY: 'auto', backgroundColor: 'white', borderRadius: '10px', padding: '26px', boxShadow: '0 16px 48px rgba(0,0,0,0.24)', color: '#3F4254' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: '16px', marginBottom: '16px' }}>
+            <div>
+              <h2 style={{ color: '#1E1E2D', margin: 0, fontSize: '20px' }}>
+                Manifiesto N° {manifiestoDetalle.idManifiesto} · Bus {manifiestoDetalle.numBus}
+              </h2>
+              <p style={{ margin: '6px 0 0', color: '#777', fontSize: '13px' }}>
+                Ruta: <strong>{manifiestoDetalle.ruta}</strong> · Fecha: {manifiestoDetalle.fechaViaje} · Carga: <strong>{Number(manifiestoDetalle.pesoTotalCarga || 0).toFixed(2)} / {Number(manifiestoDetalle.capacidadKg || 0).toFixed(2)} Kg</strong>
+              </p>
+            </div>
+            <button type="button" onClick={() => setManifiestoDetalle(null)} style={{ border: 0, background: 'transparent', fontSize: '22px', color: '#666', cursor: 'pointer' }}>×</button>
+          </div>
+
+          {(!manifiestoDetalle.encomiendas || manifiestoDetalle.encomiendas.length === 0) ? (
+            <p style={{ color: '#777' }}>Este manifiesto no tiene encomiendas asignadas actualmente.</p>
+          ) : (
+            <table style={tableStyle}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>Tracking</th>
+                  <th style={thStyle}>Descripción</th>
+                  <th style={thStyle}>Destinatario</th>
+                  <th style={thStyle}>Peso</th>
+                  <th style={thStyle}>Estado</th>
+                  <th style={thStyle}>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {manifiestoDetalle.encomiendas.map((item: any) => {
+                  const enTransito = (item.estadoLogistico || '').toLowerCase() === 'en tránsito';
+                  return (
+                    <tr key={item.codigoTracking} style={trStyle}>
+                      <td style={{ ...tdStyle, fontWeight: 700, color: '#D32F2F' }}>{item.codigoTracking}</td>
+                      <td style={tdStyle}>{item.descripcion || '—'}</td>
+                      <td style={tdStyle}>{item.destinatario || '—'}</td>
+                      <td style={tdStyle}>{Number(item.peso || 0).toFixed(2)} Kg</td>
+                      <td style={tdStyle}>{etiquetaEstadoEncomienda(item.estadoLogistico)}</td>
+                      <td style={tdStyle}>
+                        {puede(rol, 'asignar_manifiesto') && enTransito ? (
+                          <button
+                            type="button"
+                            disabled={retirandoTracking === item.codigoTracking}
+                            onClick={() => void retirarEncomiendaDeManifiesto(item.codigoTracking, manifiestoDetalle.idManifiesto)}
+                            style={{ padding: '6px 10px', backgroundColor: '#FDECEC', color: '#B42318', border: '1px solid #F5C2C0', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                          >
+                            {retirandoTracking === item.codigoTracking ? 'Retirando...' : 'Retirar del bus'}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '12px', color: '#888' }}>Ya recepcionado</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '20px' }}>
+            <button type="button" onClick={() => setManifiestoDetalle(null)} style={btnSecondary}>Cerrar</button>
+          </div>
+        </section>
+      </div>
+    )}
+    {confirmarEdicionManifiesto && (
+      <ConfirmacionModal
+        titulo="Confirmar cambios del manifiesto"
+        mensaje={`¿Guardar los cambios del manifiesto N° ${manifiestoEditando}? Se validarán la ruta y la capacidad frente a las encomiendas asignadas.`}
+        textoConfirmar="Guardar cambios"
+        procesando={confirmacionProcesando}
+        onCancelar={() => setConfirmarEdicionManifiesto(false)}
+        onConfirmar={() => void guardarEdicionManifiesto()}
+      />
+    )}
+    {manifiestoAEliminar && (
+      <ConfirmacionModal
+        titulo="Eliminar manifiesto"
+        mensaje={`¿Eliminar el manifiesto N° ${manifiestoAEliminar.idManifiesto} del bus ${manifiestoAEliminar.numBus}? Esta acción no se puede deshacer.`}
+        textoConfirmar="Eliminar manifiesto"
+        peligro
+        procesando={confirmacionProcesando}
+        onCancelar={() => setManifiestoAEliminar(null)}
+        onConfirmar={() => void confirmarEliminarManifiesto()}
+      />
+    )}
+    {solicitudAResolver && (
+      <ConfirmacionModal
+        titulo={solicitudAResolver.aprobar ? 'Aprobar solicitud del cliente' : 'Rechazar solicitud del cliente'}
+        mensaje={`${solicitudAResolver.aprobar ? '¿Confirmas la aprobación' : '¿Confirmas el rechazo'} de la solicitud de ${solicitudAResolver.solicitud.tipo === 'CANCELACION' ? 'cancelación' : solicitudAResolver.solicitud.tipo === 'CAMBIO_DIRECCION' ? 'cambio de dirección' : 'bulto adicional'} para la encomienda ${solicitudAResolver.solicitud.codigoTracking}?`}
+        textoConfirmar={solicitudAResolver.aprobar ? 'Aprobar solicitud' : 'Rechazar solicitud'}
+        peligro={!solicitudAResolver.aprobar}
+        procesando={confirmacionProcesando}
+        onCancelar={() => setSolicitudAResolver(null)}
+        onConfirmar={() => void resolverSolicitud()}
+      >
+        <label className="confirmation-comment">
+          {solicitudAResolver.aprobar ? 'Comentario para el cliente (opcional)' : 'Motivo del rechazo (obligatorio)'}
+          <textarea
+            maxLength={500}
+            required={!solicitudAResolver.aprobar}
+            value={comentarioResolucion}
+            onChange={(event) => setComentarioResolucion(event.target.value)}
+            rows={3}
+          />
+        </label>
+      </ConfirmacionModal>
+    )}
+    {!manifiestoImprimir && !comprobanteImprimir && !comprobanteVista && (encomiendaImprimir || encomiendaConsultada || resumenRegistrado) && (() => {
       const reporte = encomiendaImprimir || (vistaActual === 'lista_encomiendas' ? encomiendaConsultada : (resumenRegistrado || encomiendaConsultada));
       if (!reporte) return null;
 
@@ -832,7 +2643,7 @@ export default function Dashboard() {
           <p className="ticket-titulo">COMPROBANTE DE ENCOMIENDA</p>
           <div className="ticket-linea" />
           <p><strong>Tracking:</strong> {reporte.codigoTracking}</p>
-          <p><strong>Estado:</strong> {reporte.estadoLogistico}</p>
+          <p><strong>Estado:</strong> {etiquetaEstadoEncomienda(reporte.estadoLogistico)}</p>
           <p><strong>Fecha de emisión:</strong> {new Date().toLocaleDateString('es-PE')}</p>
           <div className="ticket-linea" />
           <p><strong>Remitente:</strong> {remitenteNombre}{remitenteDoc}</p>
@@ -842,8 +2653,18 @@ export default function Dashboard() {
           {reporte.numeroBus && <p><strong>Bus asignado:</strong> {reporte.numeroBus}</p>}
           {reporte.fechaViaje && <p><strong>Fecha de viaje:</strong> {reporte.fechaViaje}</p>}
           <div className="ticket-linea" />
-          <p><strong>Descripción:</strong> {reporte.descripcion || 'Sin descripción'}</p>
-          <p><strong>Peso:</strong> {reporte.peso} Kg</p>
+          <p><strong>Bultos del envío:</strong></p>
+          <ul className="ticket-bultos">
+            {(Array.isArray(reporte.bultos) && reporte.bultos.length > 0
+              ? reporte.bultos
+              : [{ descripcion: reporte.descripcion || 'Sin descripción', peso: reporte.peso, original: true }]
+            ).map((bulto: any, index: number) => (
+              <li key={`${reporte.codigoTracking}-ticket-bulto-${index}`}>
+                {bulto.original ? 'Original' : `Adicional ${index}`} — {bulto.descripcion || 'Sin descripción'} · {bulto.peso} kg
+              </li>
+            ))}
+          </ul>
+          <p><strong>Peso total:</strong> {reporte.peso} Kg</p>
           <p style={{ fontSize: '13px', marginTop: '6px' }}><strong>Tarifa:</strong> S/ {Number(reporte.tarifaBase || 0).toFixed(2)}</p>
           <div className="ticket-linea" />
           <p className="ticket-pie">Conserve este comprobante para consultar el estado de su encomienda.</p>
@@ -854,10 +2675,38 @@ export default function Dashboard() {
   );
 }
 
+function etiquetaEstadoSolicitudAdmin(estado: string) {
+  switch (estado) {
+    case 'PENDIENTE':
+      return 'Pendiente de revisión';
+    case 'PENDIENTE_PAGO':
+      return 'Aprobado · pendiente de pago adicional';
+    case 'APLICADA':
+      return 'Agregado automáticamente antes del pago';
+    case 'APROBADA':
+      return 'Aprobada y registrada';
+    case 'RECHAZADA':
+      return 'Rechazada';
+    default:
+      return estado;
+  }
+}
+
 // === ESTILOS REUTILIZABLES (Diseño Clean) ===
 const obtenerEstiloMenu = (activo: boolean) => ({
   padding: '12px 15px', backgroundColor: activo ? '#2B2B40' : 'transparent', color: activo ? 'white' : '#A2A3B7', border: 'none', textAlign: 'left' as const, cursor: 'pointer', borderRadius: '6px', fontSize: '14px', transition: '0.2s', fontWeight: activo ? '600' : '400'
 });
+const ETIQUETAS_CUENTA: Record<string, { texto: string; fondo: string; color: string }> = {
+  SIN_CUENTA: { texto: 'Sin cuenta', fondo: '#F3F6F9', color: '#6B7280' },
+  CLAVE_TEMPORAL: { texto: 'Clave temporal', fondo: '#FFF4E5', color: '#B26A00' },
+  ACTIVA: { texto: 'Activa', fondo: '#E8F5E9', color: '#2E7D32' },
+  BLOQUEADA: { texto: 'Bloqueada', fondo: '#FDECEC', color: '#B42318' },
+};
+const btnMini = { padding: '6px 12px', backgroundColor: '#F3F6F9', color: '#3F4254', border: '1px solid #E4E6EF', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' };
+const badgeCuenta = (estado?: string) => {
+  const e = ETIQUETAS_CUENTA[estado || 'SIN_CUENTA'] || ETIQUETAS_CUENTA.SIN_CUENTA;
+  return <span style={{ backgroundColor: e.fondo, color: e.color, padding: '4px 8px', borderRadius: '4px', fontSize: '12px', whiteSpace: 'nowrap' }}>{e.texto}</span>;
+};
 const labelStyle = { display: 'block', marginBottom: '8px', fontSize: '13px', fontWeight: '600', color: '#3F4254' };
 const inputStyle = { width: '100%', padding: '12px 15px', border: '1px solid #E4E6EF', borderRadius: '6px', boxSizing: 'border-box' as const, fontSize: '14px', backgroundColor: '#ffffff', color: '#3F4254', outline: 'none', transition: 'border-color 0.15s ease-in-out' };
 const btnPrimary = { padding: '14px', backgroundColor: '#D32F2F', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '15px', transition: 'background-color 0.3s' };

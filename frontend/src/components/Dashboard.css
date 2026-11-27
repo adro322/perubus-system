@@ -24,6 +24,7 @@
 .app-shell {
   min-height: 100vh !important;
   height: 100vh !important;
+  overflow: hidden;
   background: var(--dash-bg) !important;
   color: var(--dash-text);
 }
@@ -33,6 +34,9 @@
 .app-shell > div:first-child {
   width: 260px !important;
   min-width: 240px;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
   flex-shrink: 0;
   background: linear-gradient(
     180deg,
@@ -45,20 +49,23 @@
 }
 
 .app-shell > div:first-child > div:first-child {
-  padding: 20px 12px 14px !important;
+  padding: 14px 12px 10px !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
 }
 
 .app-shell > div:first-child img {
-  width: 220px !important;
-  max-height: 90px;
+  width: 200px !important;
+  max-height: 72px;
   object-fit: contain;
-  padding: 12px !important;
+  padding: 6px !important;
 }
 
 .app-shell > div:first-child > div:nth-child(2) {
-  padding: 26px 16px !important;
-  gap: 8px !important;
+  padding: 14px 14px !important;
+  gap: 4px !important;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .app-shell > div:first-child > div:nth-child(2) > div {
@@ -66,8 +73,9 @@
   font-size: 10px !important;
   font-weight: 800;
   letter-spacing: 1.8px !important;
-  margin-top: 20px !important;
-  margin-bottom: 7px !important;
+  margin-top: 12px !important;
+  margin-bottom: 4px !important;
+  flex-shrink: 0;
 }
 
 .app-shell > div:first-child > div:nth-child(2) > div:first-child {
@@ -78,8 +86,9 @@
   display: flex;
   align-items: center;
   width: 100%;
-  min-height: 45px;
-  padding: 12px 14px !important;
+  min-height: 38px;
+  flex-shrink: 0;
+  padding: 9px 12px !important;
   border: 1px solid transparent !important;
   border-radius: 9px !important;
   text-align: left;
@@ -88,6 +97,110 @@
   color: #c4d3e6 !important;
   background: transparent !important;
   transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.notification-badge {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #d71935;
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.notification-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #e4e6ef;
+}
+
+.notification-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: #647895;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.notification-tab.active {
+  border-bottom-color: #d71935;
+  color: #102b50;
+}
+
+.notification-tab span {
+  display: inline-flex;
+  min-width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #52657e;
+  font-size: 11px;
+}
+
+.notification-list {
+  display: grid;
+  gap: 12px;
+}
+
+.notification-card {
+  padding: 14px;
+  border: 1px solid #e4e6ef;
+  border-radius: 8px;
+  background: #fff;
+  color: #3f4254;
+  font-size: 13px;
+}
+
+.notification-card p {
+  margin: 8px 0;
+}
+
+.notification-card-heading,
+.notification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.notification-card-heading strong {
+  color: #102b50;
+}
+
+.notification-card-heading span {
+  color: #75849a;
+}
+
+.notification-status {
+  color: #2e7d32;
+  font-weight: 700;
+}
+
+.notification-status.pending {
+  color: #9a5b00;
+}
+
+.notification-empty {
+  margin: 8px 0 0;
+  color: #75849a;
+  font-size: 13px;
 }
 
 .app-shell > div:first-child > div:nth-child(2) button:hover {
@@ -364,21 +477,34 @@ body:has([role="dialog"]) {
 /* Mantener intacta la impresión de comprobantes */
 
 .ticket-impresion,
+.comprobante-impresion,
 .manifiesto-impresion {
   display: none;
 }
 
 @media print {
-  .app-shell {
+  .app-shell,
+  .no-print,
+  [role="dialog"] {
     display: none !important;
   }
 
-  .ticket-impresion {
+  .ticket-impresion,
+  .comprobante-impresion {
     display: block !important;
   }
 
   .manifiesto-impresion {
     display: block !important;
+  }
+
+  .ticket-bultos {
+    margin: 4px 0 8px;
+    padding-left: 18px;
+  }
+
+  .ticket-bultos li {
+    margin: 3px 0;
   }
 }
 

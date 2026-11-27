@@ -1,5 +1,7 @@
 package com.perubusSystem.perubus_system.dto;
 
+import java.util.List;
+
 public record EncomiendaConsulta(
         String codigoTracking,
         Double peso,
@@ -11,5 +13,6 @@ public record EncomiendaConsulta(
         String ruta,
         String direccionDestinatario,
         String fechaViaje,
-        String numeroBus) {
+        String numeroBus,
+        List<BultoEncomiendaRespuesta> bultos) {
 }

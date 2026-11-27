@@ -1,0 +1,1044 @@
+.portal-page {
+  min-height: 100vh;
+  background: #f3f6fb;
+  color: #182b47;
+}
+
+.portal-header {
+  display: flex;
+  min-height: 76px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px clamp(20px, 6vw, 88px);
+  border-bottom: 1px solid #e1e7ef;
+  background: #fff;
+}
+
+.portal-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  color: #102b50;
+  font-size: 19px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.portal-brand strong {
+  color: #d71935;
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+
+.portal-brand-mark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 12px 4px;
+  background: #d71935;
+  color: white;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.portal-user {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: #52657e;
+  font-size: 14px;
+}
+
+.portal-logout {
+  border: 0;
+  background: transparent;
+  color: #b9102a;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.portal-auth {
+  display: grid;
+  width: min(1120px, calc(100% - 40px));
+  min-height: calc(100vh - 76px);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 470px);
+  align-items: center;
+  gap: clamp(36px, 8vw, 110px);
+  margin: 0 auto;
+  padding: 48px 0;
+}
+
+.portal-auth-intro h1,
+.portal-heading h1 {
+  margin: 12px 0;
+  color: #102b50;
+  font-size: clamp(32px, 4vw, 48px);
+  letter-spacing: -1.5px;
+  line-height: 1.12;
+}
+
+.portal-auth-intro > p,
+.portal-heading > p {
+  max-width: 500px;
+  color: #647895;
+  line-height: 1.7;
+}
+
+.portal-refresh {
+  margin-top: 16px;
+  padding: 9px 13px;
+  border: 1px solid #d7e1ef;
+  border-radius: 7px;
+  background: #fff;
+  color: #173b67;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.portal-refresh:hover {
+  border-color: #9eb2cc;
+}
+
+.portal-eyebrow {
+  color: #d71935;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.7px;
+}
+
+.portal-assurance {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 30px;
+  color: #50627a;
+  font-size: 14px;
+}
+
+.portal-assurance > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: #e6f4ed;
+  color: #21804d;
+  font-weight: 800;
+}
+
+.portal-auth-card {
+  padding: clamp(22px, 4vw, 38px);
+  border: 1px solid #e1e7ef;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 18px 55px rgba(16, 43, 80, 0.08);
+}
+
+.portal-auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 26px;
+  padding: 5px;
+  border-radius: 9px;
+  background: #f3f6fb;
+}
+
+.portal-auth-tabs button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #647895;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.portal-auth-tabs button.active {
+  background: #fff;
+  color: #102b50;
+  box-shadow: 0 2px 6px rgba(16, 43, 80, 0.1);
+}
+
+.portal-auth-card h2 {
+  color: #102b50;
+  font-size: 22px;
+}
+
+.portal-form-subtitle {
+  margin: 7px 0 20px;
+  color: #718096;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.portal-form {
+  display: grid;
+  gap: 14px;
+}
+
+.portal-form label {
+  display: grid;
+  gap: 7px;
+  color: #354963;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.portal-form input {
+  width: 100%;
+  min-height: 43px;
+  padding: 10px 12px;
+  border: 1px solid #d7e1ef;
+  border-radius: 7px;
+  background: #fff;
+  color: #182b47;
+  font-size: 14px;
+}
+
+.field-note {
+  color: #8a98aa;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.portal-submit {
+  min-height: 46px;
+  margin-top: 5px;
+  border: 0;
+  border-radius: 7px;
+  background: #d71935;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.portal-submit:hover:not(:disabled) {
+  background: #b9102a;
+}
+
+.portal-privacy-note {
+  color: #718096;
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.portal-back-link {
+  display: block;
+  margin-top: 20px;
+  color: #647895;
+  font-size: 12px;
+  text-align: center;
+  text-decoration: none;
+}
+
+.portal-back-link:hover {
+  color: #102b50;
+}
+
+.portal-alert {
+  margin: 12px 0;
+  padding: 11px 12px;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.portal-alert-error {
+  background: #fff0f1;
+  color: #a4162b;
+}
+
+.portal-alert-success {
+  background: #eaf7ef;
+  color: #226b41;
+}
+
+.portal-content {
+  width: min(1060px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 54px 0 80px;
+}
+
+.portal-heading {
+  margin-bottom: 32px;
+}
+
+.portal-heading h1 {
+  font-size: clamp(30px, 4vw, 42px);
+}
+
+.portal-empty {
+  padding: 60px 20px;
+  border: 1px dashed #c9d5e5;
+  border-radius: 14px;
+  background: #fff;
+  text-align: center;
+}
+
+.portal-empty-icon {
+  display: inline-grid;
+  width: 52px;
+  height: 52px;
+  place-items: center;
+  border-radius: 50%;
+  background: #edf3fa;
+  color: #42638a;
+  font-size: 28px;
+}
+
+.portal-empty h2 {
+  margin-top: 16px;
+  color: #102b50;
+  font-size: 19px;
+}
+
+.portal-empty p {
+  margin-top: 8px;
+  color: #718096;
+  font-size: 14px;
+}
+
+.portal-shipment-list {
+  display: grid;
+  gap: 20px;
+}
+
+.portal-shipment {
+  overflow: hidden;
+  border: 1px solid #e1e7ef;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 8px 26px rgba(16, 43, 80, 0.04);
+}
+
+.shipment-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 24px;
+  border-bottom: 1px solid #e8edf4;
+}
+
+.shipment-label {
+  color: #8290a2;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+}
+
+.shipment-heading h2 {
+  margin-top: 5px;
+  color: #102b50;
+  font-size: 21px;
+}
+
+.shipment-status {
+  padding: 8px 12px;
+  border-radius: 20px;
+  background: #fff4e5;
+  color: #875712;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.shipment-status-late {
+  background: #fff0e8;
+  color: #a94316;
+}
+
+.shipment-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  padding: 22px 24px;
+}
+
+.shipment-details p {
+  display: grid;
+  gap: 5px;
+  color: #263c58;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.shipment-requests {
+  margin: 0 24px 24px;
+  padding: 16px;
+  border: 1px solid #e1e7ef;
+  border-radius: 9px;
+  background: #fbfcfe;
+}
+
+.shipment-requests h3 {
+  margin-bottom: 12px;
+  color: #102b50;
+  font-size: 14px;
+}
+
+.shipment-requests ul {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding-left: 18px;
+  color: #354963;
+  font-size: 12px;
+}
+
+.shipment-requests li p {
+  margin-top: 4px;
+  color: #647895;
+}
+
+.shipment-request-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.shipment-request-actions label {
+  display: grid;
+  flex: 1 1 250px;
+  gap: 6px;
+  color: #52657e;
+  font-size: 12px;
+}
+
+.shipment-request-actions input {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #c9d5e5;
+  border-radius: 6px;
+  color: #263c58;
+}
+
+.shipment-request-actions button {
+  padding: 9px 12px;
+  border: 1px solid #c9d5e5;
+  border-radius: 6px;
+  background: #fff;
+  color: #173b67;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shipment-request-actions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.shipment-request-actions .request-cancel {
+  border-color: #efc4c9;
+  color: #a4162b;
+}
+
+.request-pending-note {
+  color: #875712;
+  font-size: 12px;
+}
+
+.shipment-details p span {
+  color: #8290a2;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.shipment-parcels {
+  margin: 0 24px 20px;
+  padding: 14px 16px;
+  border: 1px solid #e1e7ef;
+  border-radius: 9px;
+  background: #fbfcfe;
+}
+
+.shipment-parcels h3 {
+  margin-bottom: 10px;
+  color: #102b50;
+  font-size: 14px;
+}
+
+.shipment-parcels ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shipment-parcels li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #52657e;
+  font-size: 12px;
+}
+
+.shipment-parcels li strong {
+  color: #263c58;
+  text-align: right;
+}
+
+.shipment-progress {
+  padding: 4px 24px 24px;
+}
+
+.shipment-progress-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.shipment-progress-heading h3 {
+  color: #102b50;
+  font-size: 15px;
+}
+
+.shipment-progress-heading strong {
+  color: #d71935;
+  font-size: 14px;
+}
+
+.progress-track {
+  position: relative;
+  height: 54px;
+  margin: 0 8px;
+}
+
+.progress-track::before,
+.progress-track-fill {
+  position: absolute;
+  top: 8px;
+  left: 0;
+  height: 4px;
+  border-radius: 4px;
+}
+
+.progress-track::before {
+  right: 0;
+  background: #e2e9f2;
+  content: '';
+}
+
+.progress-track-fill {
+  z-index: 1;
+  background: #d71935;
+  transition: width 0.8s ease;
+}
+
+.progress-truck {
+  position: absolute;
+  z-index: 2;
+  top: -15px;
+  display: block;
+  width: 30px;
+  margin-left: -13px;
+  font-size: 22px;
+  line-height: 1;
+  transition: left 0.8s ease;
+}
+
+.progress-stops {
+  position: absolute;
+  inset: 3px 0 auto;
+  height: 45px;
+}
+
+.progress-stop {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  color: #8290a2;
+}
+
+.progress-stop i {
+  z-index: 2;
+  width: 14px;
+  height: 14px;
+  border: 3px solid #dce5f0;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.progress-stop.active i {
+  border-color: #d71935;
+  background: #fff;
+}
+
+.progress-stop small {
+  max-width: 100px;
+  margin-top: 12px;
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.progress-stop.active small {
+  color: #354963;
+  font-weight: 700;
+}
+
+.shipment-eta {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 24px 24px;
+  padding: 14px 16px;
+  border: 1px solid #dce9f7;
+  border-radius: 9px;
+  background: #f4f8fd;
+}
+
+.shipment-eta-late {
+  border-color: #f1d8c3;
+  background: #fff8f1;
+}
+
+.eta-icon {
+  color: #173b67;
+  font-size: 20px;
+}
+
+.shipment-eta-late .eta-icon {
+  color: #ae5c19;
+}
+
+.shipment-eta strong {
+  color: #173b67;
+  font-size: 13px;
+}
+
+.shipment-eta-late strong {
+  color: #875712;
+}
+
+.shipment-eta p {
+  margin-top: 4px;
+  color: #647895;
+}
+
+.shipment-requests li button {
+  margin-top: 8px;
+  padding: 8px 11px;
+  border: 1px solid #c9d5e5;
+  border-radius: 6px;
+  background: #fff;
+  color: #173b67;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shipment-requests li button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.shipment-timeline {
+  padding: 0 24px 24px;
+}
+
+.shipment-timeline h3 {
+  margin-bottom: 18px;
+  color: #102b50;
+  font-size: 15px;
+}
+
+.shipment-timeline ol {
+  display: grid;
+  gap: 0;
+  list-style: none;
+}
+
+.shipment-timeline li {
+  position: relative;
+  display: flex;
+  gap: 13px;
+  min-height: 65px;
+}
+
+.shipment-timeline li:not(:last-child)::before {
+  position: absolute;
+  top: 13px;
+  bottom: -3px;
+  left: 5px;
+  width: 2px;
+  background: #dce5f0;
+  content: '';
+}
+
+.timeline-dot {
+  position: relative;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  margin-top: 3px;
+  border: 3px solid #d71935;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.shipment-timeline li > div {
+  padding-bottom: 16px;
+}
+
+.shipment-timeline strong {
+  color: #263c58;
+  font-size: 13px;
+}
+
+.shipment-timeline p {
+  margin-top: 4px;
+  color: #647895;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.shipment-timeline li span:not(.timeline-dot),
+.shipment-timeline time {
+  display: inline-block;
+  margin-top: 6px;
+  margin-right: 12px;
+  color: #8290a2;
+  font-size: 11px;
+}
+
+.portal-loading {
+  padding: 80px 20px;
+  color: #647895;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .portal-auth {
+    grid-template-columns: 1fr;
+    gap: 28px;
+    padding: 32px 0;
+  }
+
+  .portal-auth-intro h1 {
+    font-size: 34px;
+  }
+
+  .shipment-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .progress-track {
+    height: 72px;
+  }
+
+  .progress-stop small {
+    max-width: 48px;
+    font-size: 8px;
+    line-height: 1.2;
+  }
+
+  .portal-user {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .shipment-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .shipment-details {
+    grid-template-columns: 1fr;
+  }
+
+  .shipment-parcels li {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .shipment-parcels li strong {
+    text-align: left;
+  }
+}
+
+/* =====================================================================
+   Estilos del rediseño del portal (banner, pestañas y camión de progreso).
+   El código ya usaba estas clases desde el PR #11, pero sus estilos no se habían subido.
+   ===================================================================== */
+
+/* ---- Banner superior ---- */
+.portal-hero-banner {
+  background: linear-gradient(135deg, #0e2747 0%, #1c4378 100%);
+  color: #fff;
+  padding: 38px 0 44px;
+}
+
+.portal-hero-inner {
+  display: flex;
+  width: min(1060px, calc(100% - 40px));
+  margin: 0 auto;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.portal-hero-inner h1 {
+  margin: 6px 0 8px;
+  color: #fff;
+  font-size: clamp(26px, 4vw, 36px);
+  line-height: 1.15;
+}
+
+.portal-hero-inner p {
+  margin: 0;
+  color: #c9d8ec;
+  font-size: 15px;
+}
+
+.portal-eyebrow-light {
+  color: #ff9aac;
+}
+
+.portal-hero-inner .portal-refresh {
+  margin-top: 0;
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  transition: background 0.2s;
+}
+
+.portal-hero-inner .portal-refresh:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* El banner ya tiene su propio espacio: la lista de envíos empieza más arriba */
+.portal-hero-banner + .portal-content {
+  padding-top: 32px;
+}
+
+/* ---- Cabecera de cada envío ---- */
+.shipment-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 5px;
+}
+
+.shipment-code-row h2 {
+  margin: 0;
+}
+
+.shipment-route-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 20px;
+  background: #eef3fa;
+  color: #29476f;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ---- Pestañas de cada envío ---- */
+.shipment-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 24px;
+  border-bottom: 1px solid #e8edf4;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.shipment-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: -1px;
+  padding: 13px 16px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: #6a7b92;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.shipment-tab-btn:hover {
+  color: #102b50;
+}
+
+.shipment-tab-btn.active {
+  border-bottom-color: #d71935;
+  color: #d71935;
+}
+
+.shipment-tab-btn:focus-visible {
+  outline: 2px solid #9eb2cc;
+  outline-offset: -2px;
+}
+
+.tab-alert-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e08a00;
+  box-shadow: 0 0 0 3px rgba(224, 138, 0, 0.2);
+}
+
+.shipment-tab-panel {
+  padding-top: 4px;
+}
+
+.tab-panel-fade {
+  animation: portal-tab-fade 0.25s ease;
+}
+
+@keyframes portal-tab-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- Camión y porcentaje sobre la barra de progreso ---- */
+.truck-badge {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  margin-bottom: 1px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: #d71935;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.4;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.truck-icon {
+  display: block;
+  font-size: 22px;
+  line-height: 1;
+  transform: scaleX(-1); /* el camión mira hacia la derecha, hacia el destino */
+}
+
+.truck-arrived .truck-badge {
+  background: #1f9d55;
+}
+
+.truck-driving .truck-icon {
+  animation: portal-truck-bounce 0.6s ease-in-out infinite;
+}
+
+@keyframes portal-truck-bounce {
+  0%,
+  100% {
+    transform: scaleX(-1) translateY(0);
+  }
+  50% {
+    transform: scaleX(-1) translateY(-2px);
+  }
+}
+
+.progress-track-fill.is-moving {
+  background-image: repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.28) 0 8px, transparent 8px 16px);
+  background-size: 22px 22px;
+  animation: portal-track-stripes 1s linear infinite;
+}
+
+@keyframes portal-track-stripes {
+  to {
+    background-position: 22px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .truck-driving .truck-icon,
+  .progress-track-fill.is-moving,
+  .tab-panel-fade {
+    animation: none;
+  }
+}
+
+/* Más aire sobre la barra para que la burbuja del porcentaje no pise el título */
+.shipment-progress-heading {
+  margin-bottom: 34px;
+}
+
+/* Al llegar, el camión queda sobre la última parada y no repite el porcentaje (ya se ve en el encabezado) */
+.progress-truck.truck-arrived {
+  margin-left: -22px;
+}
+
+.truck-arrived .truck-badge {
+  display: none;
+}
+
+/* ---- Verificación del documento al activar la cuenta ---- */
+.portal-doc-check {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #dce6f2;
+  border-radius: 9px;
+  background: #f4f8fd;
+  color: #3a4f6b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.portal-doc-check strong {
+  color: #102b50;
+}
+
+.portal-doc-check-ok {
+  border-color: #bfe3cc;
+  background: #f0faf4;
+}
+
+.portal-doc-check-warn {
+  border-color: #f2d6a2;
+  background: #fff8ec;
+  color: #7a5412;
+}
+
+.portal-doc-check button {
+  justify-self: start;
+  margin-top: 4px;
+  padding: 7px 12px;
+  border: 1px solid #c9d7ea;
+  border-radius: 7px;
+  background: #fff;
+  color: #173b67;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+}

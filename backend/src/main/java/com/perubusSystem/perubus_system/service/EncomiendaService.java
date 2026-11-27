@@ -1,12 +1,15 @@
 package com.perubusSystem.perubus_system.service;
 
+import com.perubusSystem.perubus_system.seguridad.Rol;
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.model.Comprobante;
 import com.perubusSystem.perubus_system.model.Encomienda;
+import com.perubusSystem.perubus_system.model.EventoTracking;
 import com.perubusSystem.perubus_system.model.Usuario;
 import com.perubusSystem.perubus_system.repository.ClienteRepository;
 import com.perubusSystem.perubus_system.repository.ComprobanteRepository;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
+import com.perubusSystem.perubus_system.repository.EventoTrackingRepository;
 import com.perubusSystem.perubus_system.repository.UsuarioRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -21,6 +24,15 @@ import java.util.UUID;
 @Service
 public class EncomiendaService {
 
+    public static final String ESTADO_PENDIENTE_PAGO = "Pendiente de Pago";
+    public static final String ESTADO_EN_ORIGEN = "En origen";
+    public static final String ESTADO_EN_TRANSITO = "En tránsito";
+    public static final String ESTADO_EN_AGENCIA_DESTINO = "Llegó a agencia de destino";
+    public static final String ESTADO_DISPONIBLE_RECOJO = "Disponible para recojo";
+    public static final String ESTADO_EN_REPARTO = "En reparto";
+    public static final String ESTADO_RECOGIDO = "Recogido";
+    public static final String ESTADO_ENTREGADO = "Entregado";
+
     @Autowired
     private EncomiendaRepository encomiendaRepository;
     @Autowired
@@ -29,6 +41,8 @@ public class EncomiendaService {
     private UsuarioRepository usuarioRepository;
     @Autowired
     private ComprobanteRepository comprobanteRepository;
+    @Autowired
+    private EventoTrackingRepository eventoTrackingRepository;
 
     // Lógica CUS-02: Cotizar Envío Dinámico
     public double calcularCotizacion(String origen, String destino, Double peso) {
@@ -67,7 +81,20 @@ public class EncomiendaService {
         return Math.max(tarifaBaseMinima, costoEstimado);
     }
 
+    public BigDecimal calcularTarifaRuta(String ruta, double peso) {
+        if (ruta == null || ruta.isBlank()) {
+            throw new IllegalArgumentException("La encomienda no tiene una ruta válida para calcular la tarifa.");
+        }
+        String[] extremos = ruta.trim().split("-", 2);
+        if (extremos.length != 2 || extremos[0].isBlank() || extremos[1].isBlank()) {
+            throw new IllegalArgumentException("La ruta registrada no tiene un formato válido.");
+        }
+        return BigDecimal.valueOf(calcularCotizacion(extremos[0].trim(), extremos[1].trim(), peso))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
     // Lógica CUS-01: Registrar Encomienda
+    @Transactional
     public Encomienda registrarEncomienda(Encomienda encomienda) {
         if (encomienda.getRuta() == null || encomienda.getRuta().isBlank()) {
             throw new IllegalArgumentException("La ruta es obligatoria.");
@@ -89,6 +116,7 @@ public class EncomiendaService {
 
         // Validar/Guardar Remitente
         if (encomienda.getRemitente() != null) {
+            encomienda.getRemitente().setPassword(null);
             Cliente remitente = clienteRepository.findByNumDocumento(encomienda.getRemitente().getNumDocumento())
                     .orElseGet(() -> clienteRepository.save(encomienda.getRemitente()));
             encomienda.setRemitente(remitente);
@@ -96,6 +124,7 @@ public class EncomiendaService {
 
         // Validar/Guardar Destinatario
         if (encomienda.getDestinatario() != null) {
+            encomienda.getDestinatario().setPassword(null);
             Cliente destinatario = clienteRepository.findByNumDocumento(encomienda.getDestinatario().getNumDocumento())
                     .orElseGet(() -> clienteRepository.save(encomienda.getDestinatario()));
             encomienda.setDestinatario(destinatario);
@@ -106,18 +135,38 @@ public class EncomiendaService {
         encomienda.setCodigoTracking(tracking);
 
         // ¡CAMBIO CLAVE PARA LA V3! Nace como "Pendiente de Pago"
-        encomienda.setEstadoLogistico("Pendiente de Pago");
+        encomienda.setEstadoLogistico(ESTADO_PENDIENTE_PAGO);
 
-        return encomiendaRepository.save(encomienda);
+        Encomienda guardada = encomiendaRepository.save(encomienda);
+        registrarEvento(guardada, "Encomienda registrada y pendiente de pago", null);
+        return guardada;
     }
 
     @Transactional
     public Comprobante simularPago(String codigoTracking) {
+        return simularPago(codigoTracking, null);
+    }
+
+    @Transactional
+    public Comprobante simularPago(String codigoTracking, String tipoComprobanteSolicitado) {
         Encomienda encomienda = encomiendaRepository.findByCodigoTracking(codigoTracking)
                 .orElseThrow(() -> new NoSuchElementException("No se encontró la encomienda."));
 
-        if (!"Pendiente de Pago".equalsIgnoreCase(encomienda.getEstadoLogistico())) {
+        if (!ESTADO_PENDIENTE_PAGO.equalsIgnoreCase(encomienda.getEstadoLogistico())) {
             throw new IllegalStateException("La encomienda no está pendiente de pago.");
+        }
+
+        String docRemitente = encomienda.getRemitente() != null && encomienda.getRemitente().getNumDocumento() != null
+                ? encomienda.getRemitente().getNumDocumento().trim()
+                : "";
+        String tipo = (tipoComprobanteSolicitado == null || tipoComprobanteSolicitado.isBlank())
+                ? (docRemitente.length() == 11 ? "FACTURA" : "BOLETA")
+                : tipoComprobanteSolicitado.trim().toUpperCase();
+        if (!"BOLETA".equals(tipo) && !"FACTURA".equals(tipo)) {
+            throw new IllegalArgumentException("El tipo de comprobante debe ser BOLETA o FACTURA.");
+        }
+        if ("FACTURA".equals(tipo) && docRemitente.length() != 11) {
+            throw new IllegalArgumentException("Para emitir FACTURA el remitente debe tener un RUC de 11 dígitos.");
         }
 
         BigDecimal subtotal = BigDecimal.valueOf(encomienda.getTarifaBase())
@@ -127,18 +176,178 @@ public class EncomiendaService {
         BigDecimal total = subtotal.add(igv);
         LocalDateTime fechaPago = LocalDateTime.now();
 
-        Comprobante comprobante = new Comprobante();
+        Comprobante comprobante = encomienda.getIdEncomienda() == null
+                ? new Comprobante()
+                : comprobanteRepository.findByEncomienda_IdEncomienda(encomienda.getIdEncomienda())
+                        .orElseGet(Comprobante::new);
+        comprobante.setTipoComprobante(tipo);
         comprobante.setEstadoPago("SIMULADO");
         comprobante.setMontoSubtotal(subtotal);
         comprobante.setMontoIgv(igv);
         comprobante.setMontoTotal(total);
+        comprobante.setFechaEmision(fechaPago);
         comprobante.setFechaPago(fechaPago);
         comprobante.setEncomienda(encomienda);
 
-        comprobanteRepository.save(comprobante);
-        encomienda.setEstadoLogistico("En origen");
+        Comprobante guardado = comprobanteRepository.save(comprobante);
+        if (guardado != null && guardado.getIdComprobante() != null
+                && (guardado.getNumeroSerie() == null || guardado.getNumeroSerie().isBlank())) {
+            String prefijo = "FACTURA".equals(tipo) ? "F001-" : "B001-";
+            guardado.setNumeroSerie(prefijo + String.format("%06d", guardado.getIdComprobante()));
+            comprobanteRepository.save(guardado);
+        }
+        encomienda.setEstadoLogistico(ESTADO_EN_ORIGEN);
+        encomiendaRepository.save(encomienda);
+        registrarEvento(encomienda, "Pago confirmado (" + tipo + "). El envío se encuentra en origen.", null);
+
+        return guardado != null ? guardado : comprobante;
+    }
+
+    @Transactional
+    public void actualizarComprobantePorBulto(Encomienda encomienda) {
+        if (encomienda == null || encomienda.getIdEncomienda() == null || encomienda.getTarifaBase() == null) {
+            return;
+        }
+        comprobanteRepository.findByEncomienda_IdEncomienda(encomienda.getIdEncomienda()).ifPresent(comprobante -> {
+            BigDecimal subtotal = BigDecimal.valueOf(encomienda.getTarifaBase())
+                    .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal igv = subtotal.multiply(new BigDecimal("0.18"))
+                    .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal total = subtotal.add(igv);
+            comprobante.setMontoSubtotal(subtotal);
+            comprobante.setMontoIgv(igv);
+            comprobante.setMontoTotal(total);
+            comprobante.setFechaPago(LocalDateTime.now());
+            comprobanteRepository.save(comprobante);
+        });
+    }
+
+    @Transactional
+    public Encomienda confirmarLlegada(String codigoTracking, Long usuarioId) {
+        Usuario usuario = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new NoSuchElementException("No se encontró el usuario."));
+        if (!Boolean.TRUE.equals(usuario.getEstado())
+                || !Rol.autoriza(usuario.getRol(), Rol.OPERARIO)) {
+            throw new IllegalStateException("No tienes permiso para confirmar la llegada.");
+        }
+
+        Encomienda encomienda = encomiendaRepository.findByCodigoTracking(codigoTracking)
+                .orElseThrow(() -> new NoSuchElementException("No se encontró la encomienda."));
+        if (!"En tránsito".equalsIgnoreCase(encomienda.getEstadoLogistico())) {
+            throw new IllegalStateException("Solo se puede confirmar la llegada de encomiendas en tránsito.");
+        }
+
+        encomienda.setEstadoLogistico(ESTADO_EN_AGENCIA_DESTINO);
+        encomiendaRepository.save(encomienda);
+        registrarEvento(encomienda, "Encomienda recibida en la agencia de destino.", null);
+        return encomienda;
+    }
+
+    @Transactional
+    public Encomienda marcarDisponibleParaRecojo(String codigoTracking, Long usuarioId) {
+        validarPersonal(usuarioId, "marcar la encomienda disponible para recojo");
+        Encomienda encomienda = buscarEncomienda(codigoTracking);
+        validarEstadoActual(encomienda, ESTADO_EN_AGENCIA_DESTINO);
+        encomienda.setEstadoLogistico(ESTADO_DISPONIBLE_RECOJO);
+        encomiendaRepository.save(encomienda);
+        registrarEvento(encomienda, "Encomienda disponible para recojo en la agencia de destino.", null);
+        return encomienda;
+    }
+
+    @Transactional
+    public Encomienda iniciarReparto(String codigoTracking, Long usuarioId) {
+        validarPersonal(usuarioId, "iniciar el reparto de la encomienda");
+        Encomienda encomienda = buscarEncomienda(codigoTracking);
+        validarEstadoActual(encomienda, ESTADO_EN_AGENCIA_DESTINO);
+        if (encomienda.getDireccionDestinatario() == null || encomienda.getDireccionDestinatario().isBlank()) {
+            throw new IllegalStateException("Se necesita una dirección del destinatario para iniciar el reparto.");
+        }
+        encomienda.setEstadoLogistico(ESTADO_EN_REPARTO);
+        encomiendaRepository.save(encomienda);
+        registrarEvento(encomienda, "Encomienda asignada a reparto hacia la dirección del destinatario.", null);
+        return encomienda;
+    }
+
+    @Transactional
+    public Encomienda confirmarEntrega(String codigoTracking, Long usuarioId, String recibidoPor) {
+        return confirmarEntrega(codigoTracking, usuarioId, recibidoPor, null);
+    }
+
+    @Transactional
+    public Encomienda confirmarEntrega(
+            String codigoTracking,
+            Long usuarioId,
+            String recibidoPor,
+            String dniReceptor) {
+        validarPersonal(usuarioId, "confirmar la entrega");
+        if (recibidoPor == null || recibidoPor.isBlank() || recibidoPor.trim().length() > 120) {
+            throw new IllegalArgumentException("Indica el nombre de la persona que recibe la encomienda (máximo 120 caracteres).");
+        }
+        String dniLimpio = null;
+        if (dniReceptor != null) {
+            dniLimpio = dniReceptor.trim();
+            if (!dniLimpio.matches("\\d{8}|\\d{11}")) {
+                throw new IllegalArgumentException("Ingresa un DNI válido (8 dígitos) o RUC (11 dígitos) de quien recibe la encomienda.");
+            }
+        }
+
+        Encomienda encomienda = buscarEncomienda(codigoTracking);
+        String estadoActual = encomienda.getEstadoLogistico();
+        if (!ESTADO_DISPONIBLE_RECOJO.equalsIgnoreCase(estadoActual)
+                && !ESTADO_EN_REPARTO.equalsIgnoreCase(estadoActual)
+                && !ESTADO_EN_AGENCIA_DESTINO.equalsIgnoreCase(estadoActual)) {
+            throw new IllegalStateException("La encomienda debe estar en la agencia de destino, disponible para recojo o en reparto antes de entregarse.");
+        }
+
+        boolean esRecojo = ESTADO_DISPONIBLE_RECOJO.equalsIgnoreCase(estadoActual)
+                || ESTADO_EN_AGENCIA_DESTINO.equalsIgnoreCase(estadoActual);
+        encomienda.setEstadoLogistico(esRecojo ? ESTADO_RECOGIDO : ESTADO_ENTREGADO);
         encomiendaRepository.save(encomienda);
 
-        return comprobante;
+        String docDestinatario = encomienda.getDestinatario() != null && encomienda.getDestinatario().getNumDocumento() != null
+                ? encomienda.getDestinatario().getNumDocumento().trim()
+                : "";
+        String infoDni = "";
+        if (dniLimpio != null) {
+            boolean esTitular = !docDestinatario.isEmpty() && docDestinatario.equals(dniLimpio);
+            infoDni = " (Doc. verificado: " + dniLimpio
+                    + (esTitular ? " · Destinatario titular" : " · Receptor identificado") + ")";
+        }
+
+        registrarEvento(encomienda,
+                (esRecojo ? "Recojo" : "Entrega") + " confirmado por personal de PeruBus. Recibió: "
+                        + recibidoPor.trim() + infoDni + ".",
+                null);
+        return encomienda;
+    }
+
+    private void validarPersonal(Long usuarioId, String accion) {
+        Usuario usuario = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new NoSuchElementException("No se encontró el usuario."));
+        if (!Boolean.TRUE.equals(usuario.getEstado())
+                || !Rol.autoriza(usuario.getRol(), Rol.OPERARIO)) {
+            throw new IllegalStateException("No tienes permiso para " + accion + ".");
+        }
+    }
+
+    private Encomienda buscarEncomienda(String codigoTracking) {
+        return encomiendaRepository.findByCodigoTracking(codigoTracking)
+                .orElseThrow(() -> new NoSuchElementException("No se encontró la encomienda."));
+    }
+
+    private void validarEstadoActual(Encomienda encomienda, String estadoRequerido) {
+        if (!estadoRequerido.equalsIgnoreCase(encomienda.getEstadoLogistico())) {
+            throw new IllegalStateException("La encomienda debe estar en estado '" + estadoRequerido
+                    + "' para realizar esta acción (estado actual: " + encomienda.getEstadoLogistico() + ").");
+        }
+    }
+
+    private void registrarEvento(Encomienda encomienda, String detalle, String ubicacion) {
+        EventoTracking evento = new EventoTracking();
+        evento.setEncomienda(encomienda);
+        evento.setEstado(encomienda.getEstadoLogistico());
+        evento.setDetalle(detalle);
+        evento.setUbicacion(ubicacion);
+        eventoTrackingRepository.save(evento);
     }
 }

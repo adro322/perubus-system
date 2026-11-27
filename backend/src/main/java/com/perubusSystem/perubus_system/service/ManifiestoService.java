@@ -4,8 +4,10 @@ import com.perubusSystem.perubus_system.dto.ManifiestoRespuesta;
 import com.perubusSystem.perubus_system.dto.ManifiestoSolicitud;
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.model.Encomienda;
+import com.perubusSystem.perubus_system.model.EventoTracking;
 import com.perubusSystem.perubus_system.model.Manifiesto;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
+import com.perubusSystem.perubus_system.repository.EventoTrackingRepository;
 import com.perubusSystem.perubus_system.repository.ManifiestoRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -25,16 +27,11 @@ public class ManifiestoService {
     private ManifiestoRepository manifiestoRepository;
     @Autowired
     private EncomiendaRepository encomiendaRepository;
+    @Autowired
+    private EventoTrackingRepository eventoTrackingRepository;
 
     public Manifiesto crear(ManifiestoSolicitud datos) {
-        if (datos.numBus() == null || datos.numBus().isBlank())
-            throw new IllegalArgumentException("El número de bus es obligatorio.");
-        if (datos.ruta() == null || datos.ruta().isBlank())
-            throw new IllegalArgumentException("La ruta es obligatoria.");
-        if (datos.fechaViaje() == null)
-            throw new IllegalArgumentException("La fecha de viaje es obligatoria.");
-        if (datos.capacidadKg() == null || datos.capacidadKg() <= 0)
-            throw new IllegalArgumentException("La capacidad del bus debe ser mayor a 0.");
+        validarDatos(datos);
 
         Manifiesto m = new Manifiesto();
         m.setNumBus(datos.numBus().trim().toUpperCase(Locale.ROOT));
@@ -43,6 +40,51 @@ public class ManifiestoService {
         m.setCapacidadKg(datos.capacidadKg());
         m.setPesoTotalCarga(0.0);
         return manifiestoRepository.save(m);
+    }
+
+    @Transactional
+    public ManifiestoRespuesta actualizar(Long id, ManifiestoSolicitud datos) {
+        validarDatos(datos);
+        Manifiesto manifiesto = buscar(id);
+        List<Encomienda> encomiendas = encomiendaRepository.findByManifiesto(manifiesto);
+        double pesoAsignado = encomiendas.stream()
+                .map(Encomienda::getPeso)
+                .filter(peso -> peso != null)
+                .mapToDouble(Double::doubleValue)
+                .sum();
+
+        if (datos.capacidadKg() < pesoAsignado) {
+            throw new IllegalStateException(String.format(Locale.ROOT,
+                    "La capacidad no puede ser menor a la carga asignada (%.2f kg).", pesoAsignado));
+        }
+
+        String rutaNueva = datos.ruta().trim();
+        for (Encomienda encomienda : encomiendas) {
+            if (encomienda.getRuta() == null || !encomienda.getRuta().trim().equalsIgnoreCase(rutaNueva)) {
+                throw new IllegalStateException("No se puede cambiar la ruta del manifiesto a '" + rutaNueva
+                        + "' porque ya tiene asignada la encomienda " + encomienda.getCodigoTracking()
+                        + ", cuya ruta registrada es '" + encomienda.getRuta() + "'.");
+            }
+        }
+
+        manifiesto.setNumBus(datos.numBus().trim().toUpperCase(Locale.ROOT));
+        manifiesto.setRuta(rutaNueva);
+        manifiesto.setFechaViaje(datos.fechaViaje());
+        manifiesto.setCapacidadKg(datos.capacidadKg());
+        manifiesto.setPesoTotalCarga(pesoAsignado);
+        manifiestoRepository.save(manifiesto);
+        return aRespuesta(manifiesto);
+    }
+
+    @Transactional
+    public void eliminar(Long id) {
+        Manifiesto manifiesto = buscar(id);
+        List<Encomienda> encomiendas = encomiendaRepository.findByManifiesto(manifiesto);
+        if (!encomiendas.isEmpty()) {
+            throw new IllegalStateException("No se puede eliminar el manifiesto porque tiene "
+                    + encomiendas.size() + " encomienda(s) asignada(s).");
+        }
+        manifiestoRepository.delete(manifiesto);
     }
 
     @Transactional(readOnly = true)
@@ -86,11 +128,67 @@ public class ManifiestoService {
         for (Encomienda e : nuevas) {
             e.setManifiesto(manifiesto);
             e.setEstadoLogistico(ESTADO_EN_TRANSITO);
+            EventoTracking evento = new EventoTracking();
+            evento.setEncomienda(e);
+            evento.setEstado(ESTADO_EN_TRANSITO);
+            evento.setDetalle("Encomienda asignada al bus " + manifiesto.getNumBus() + " para la ruta "
+                    + manifiesto.getRuta() + ".");
+            eventoTrackingRepository.save(evento);
         }
         encomiendaRepository.saveAll(nuevas);
         manifiesto.setPesoTotalCarga(pesoActual + pesoNuevo);
         manifiestoRepository.save(manifiesto);
         return aRespuesta(manifiesto);
+    }
+
+    @Transactional
+    public ManifiestoRespuesta retirarEncomienda(Long id, String codigoTracking) {
+        if (codigoTracking == null || codigoTracking.isBlank()) {
+            throw new IllegalArgumentException("Debe indicar el código de tracking de la encomienda.");
+        }
+        Manifiesto manifiesto = buscar(id);
+        String codigo = codigoTracking.trim().toUpperCase(Locale.ROOT);
+        Encomienda encomienda = encomiendaRepository.findByCodigoTracking(codigo)
+                .orElseThrow(() -> new NoSuchElementException("No existe la encomienda " + codigo + "."));
+
+        if (encomienda.getManifiesto() == null
+                || !manifiesto.getIdManifiesto().equals(encomienda.getManifiesto().getIdManifiesto())) {
+            throw new IllegalStateException("La encomienda " + codigo + " no está asignada a este manifiesto.");
+        }
+        if (!ESTADO_EN_TRANSITO.equalsIgnoreCase(encomienda.getEstadoLogistico())) {
+            throw new IllegalStateException("Solo se puede retirar del manifiesto una encomienda en estado '"
+                    + ESTADO_EN_TRANSITO + "' (estado actual: " + encomienda.getEstadoLogistico() + ").");
+        }
+
+        encomienda.setManifiesto(null);
+        encomienda.setEstadoLogistico(ESTADO_ASIGNABLE);
+        encomiendaRepository.save(encomienda);
+
+        EventoTracking evento = new EventoTracking();
+        evento.setEncomienda(encomienda);
+        evento.setEstado(ESTADO_ASIGNABLE);
+        evento.setDetalle("Encomienda retirada del manifiesto del bus " + manifiesto.getNumBus()
+                + " y devuelta a origen.");
+        eventoTrackingRepository.save(evento);
+
+        double nuevoPeso = pesoActual(manifiesto);
+        manifiesto.setPesoTotalCarga(nuevoPeso);
+        manifiestoRepository.save(manifiesto);
+        return aRespuesta(manifiesto);
+    }
+
+    @Transactional
+    public ManifiestoRespuesta retirarPorTracking(String codigoTracking) {
+        if (codigoTracking == null || codigoTracking.isBlank()) {
+            throw new IllegalArgumentException("Debe indicar el código de tracking de la encomienda.");
+        }
+        String codigo = codigoTracking.trim().toUpperCase(Locale.ROOT);
+        Encomienda encomienda = encomiendaRepository.findByCodigoTracking(codigo)
+                .orElseThrow(() -> new NoSuchElementException("No existe la encomienda " + codigo + "."));
+        if (encomienda.getManifiesto() == null || encomienda.getManifiesto().getIdManifiesto() == null) {
+            throw new IllegalStateException("La encomienda " + codigo + " no tiene un manifiesto asignado.");
+        }
+        return retirarEncomienda(encomienda.getManifiesto().getIdManifiesto(), codigo);
     }
 
     // La encomienda solo puede viajar en un bus de su misma ruta (ej. Lima-Ica)
@@ -107,6 +205,28 @@ public class ManifiestoService {
     private Manifiesto buscar(Long id) {
         return manifiestoRepository.findById(id)
                 .orElseThrow(() -> new NoSuchElementException("No se encontró el manifiesto " + id + "."));
+    }
+
+    private void validarDatos(ManifiestoSolicitud datos) {
+        if (datos == null) {
+            throw new IllegalArgumentException("Debe indicar los datos del manifiesto.");
+        }
+        if (datos.numBus() == null || datos.numBus().isBlank()) {
+            throw new IllegalArgumentException("El número de bus es obligatorio.");
+        }
+        if (datos.numBus().trim().length() > 20) {
+            throw new IllegalArgumentException("El número de bus no puede superar 20 caracteres.");
+        }
+        if (datos.ruta() == null || datos.ruta().isBlank()) {
+            throw new IllegalArgumentException("La ruta es obligatoria.");
+        }
+        if (datos.fechaViaje() == null) {
+            throw new IllegalArgumentException("La fecha de viaje es obligatoria.");
+        }
+        if (datos.capacidadKg() == null || !Double.isFinite(datos.capacidadKg())
+                || datos.capacidadKg() <= 0 || datos.capacidadKg() > 99_999_999.99) {
+            throw new IllegalArgumentException("La capacidad debe ser mayor a 0 y no superar 99,999,999.99 kg.");
+        }
     }
 
     private double pesoActual(Manifiesto m) {

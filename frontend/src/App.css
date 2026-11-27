@@ -1,4 +1,5 @@
 .ticket-impresion,
+.comprobante-impresion,
 .manifiesto-impresion {
 	display: none;
 }
@@ -8,18 +9,34 @@
 		margin: 12mm;
 	}
 
-	.app-shell {
+	.app-shell,
+	.no-print,
+	.portal-page > *:not(.comprobante-impresion),
+	[role="dialog"] {
 		display: none !important;
+	}
+
+	body,
+	html {
+		background: #fff !important;
+		color: #111 !important;
+		height: auto !important;
+		overflow: visible !important;
 	}
 
 	.ticket-impresion {
 		display: block !important;
-		width: 76mm;
+		width: 100%;
+		max-width: 180mm;
 		margin: 0 auto;
-		font-family: Arial, sans-serif;
+		padding: 8mm;
+		border: 1px solid #222;
+		border-radius: 6px;
+		font-family: 'Inter', Arial, sans-serif;
 		font-size: 12px;
-		line-height: 1.45;
+		line-height: 1.5;
 		color: #111;
+		background: #fff;
 	}
 
 	.ticket-impresion h1,
@@ -29,17 +46,20 @@
 	}
 
 	.ticket-impresion h1 {
-		font-size: 18px;
+		font-size: 20px;
 		margin: 0 0 4px;
+		color: #102b50;
 	}
 
 	.ticket-titulo {
 		margin: 0 0 10px;
 		font-weight: bold;
+		font-size: 13px;
+		letter-spacing: 0.5px;
 	}
 
 	.ticket-linea {
-		border-top: 1px dashed #111;
+		border-top: 1px dashed #333;
 		margin: 10px 0;
 	}
 
@@ -48,8 +68,128 @@
 	}
 
 	.ticket-pie {
-		font-size: 10px;
+		font-size: 11px;
+		color: #444;
+		margin-top: 12px;
 	}
+
+	.comprobante-impresion {
+		display: block !important;
+		width: 100%;
+		max-width: 190mm;
+		margin: 0 auto;
+		padding: 6mm;
+		font-family: 'Inter', Arial, sans-serif;
+		font-size: 12px;
+		line-height: 1.45;
+		color: #111;
+		background: #fff;
+	}
+
+	.comprobante-cabecera-doc {
+		display: flex;
+		justify-content: space-between;
+		align-items: flex-start;
+		gap: 16px;
+		border-bottom: 2px solid #102b50;
+		padding-bottom: 12px;
+		margin-bottom: 14px;
+	}
+
+	.comprobante-empresa h1 {
+		font-size: 20px;
+		font-weight: 800;
+		margin: 0 0 4px;
+		color: #102b50;
+	}
+
+	.comprobante-empresa p {
+		margin: 2px 0;
+		font-size: 11px;
+		color: #333;
+	}
+
+	.comprobante-recuadro-sunat {
+		border: 2px solid #d32f2f;
+		border-radius: 6px;
+		padding: 10px 16px;
+		text-align: center;
+		min-width: 210px;
+	}
+
+	.comprobante-recuadro-sunat .ruc {
+		font-weight: 700;
+		font-size: 12px;
+		color: #111;
+	}
+
+	.comprobante-recuadro-sunat .tipo {
+		font-weight: 800;
+		font-size: 13px;
+		color: #d32f2f;
+		margin: 4px 0;
+	}
+
+	.comprobante-recuadro-sunat .serie {
+		font-weight: 800;
+		font-size: 15px;
+		font-family: monospace;
+		color: #102b50;
+	}
+
+	.comprobante-grid-datos {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 6px 16px;
+		border: 1px solid #ccc;
+		border-radius: 6px;
+		padding: 10px 12px;
+		margin-bottom: 14px;
+		font-size: 11.5px;
+	}
+
+	.comprobante-tabla {
+		width: 100%;
+		border-collapse: collapse;
+		margin-bottom: 14px;
+		font-size: 11.5px;
+	}
+
+	.comprobante-tabla th,
+	.comprobante-tabla td {
+		border: 1px solid #333;
+		padding: 7px 8px;
+		text-align: left;
+	}
+
+	.comprobante-tabla th {
+		background-color: #f1f5fb;
+		font-weight: 700;
+	}
+
+	.comprobante-totales {
+		margin-left: auto;
+		width: 240px;
+		border: 1px solid #333;
+		border-radius: 6px;
+		padding: 8px 12px;
+		font-size: 12px;
+	}
+
+	.comprobante-totales div {
+		display: flex;
+		justify-content: space-between;
+		margin: 4px 0;
+	}
+
+	.comprobante-totales .total-final {
+		border-top: 1px solid #333;
+		padding-top: 6px;
+		margin-top: 6px;
+		font-size: 14px;
+		font-weight: 800;
+	}
+
 
 	.manifiesto-impresion {
 		display: block;
