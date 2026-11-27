@@ -1,94 +1,276 @@
 package com.perubusSystem.perubus_system.controller;
 
+import com.perubusSystem.perubus_system.seguridad.RequiereRol;
+import com.perubusSystem.perubus_system.seguridad.Rol;
 import com.perubusSystem.perubus_system.model.Cliente;
 import com.perubusSystem.perubus_system.model.Encomienda;
-import com.perubusSystem.perubus_system.repository.ClienteRepository;
 import com.perubusSystem.perubus_system.repository.EncomiendaRepository;
+import com.perubusSystem.perubus_system.repository.BultoEncomiendaRepository;
+import com.perubusSystem.perubus_system.service.EncomiendaService;
+import com.perubusSystem.perubus_system.dto.ClienteResumen;
+import com.perubusSystem.perubus_system.dto.BultoEncomiendaRespuesta;
+import com.perubusSystem.perubus_system.dto.ConfirmacionEntregaSolicitud;
+import com.perubusSystem.perubus_system.dto.EncomiendaConsulta;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import com.perubusSystem.perubus_system.model.Usuario;
-import com.perubusSystem.perubus_system.repository.UsuarioRepository;
 
+import java.util.NoSuchElementException;
+import java.util.Locale;
 import java.util.Map;
-import java.util.UUID;
+import java.util.ArrayList;
+import java.util.List;
+import jakarta.servlet.http.HttpSession;
 
 @RestController
 @RequestMapping("/api/encomiendas")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "${app.frontend-origin}", allowCredentials = "true")
 public class EncomiendaController {
 
     @Autowired
     private EncomiendaRepository encomiendaRepository;
 
     @Autowired
-    private ClienteRepository clienteRepository;
+    private EncomiendaService encomiendaService;
 
     @Autowired
-    private UsuarioRepository usuarioRepository;
+    private BultoEncomiendaRepository bultoRepository;
 
     // ==========================================
-    // CUS-02: COTIZAR ENVÍO (Solo calcula, no guarda en BD)
+    // CUS-02: COTIZAR ENVÍO
     // ==========================================
+    @RequiereRol(Rol.AGENTE)
     @PostMapping("/cotizar")
     public ResponseEntity<?> cotizarEnvio(@RequestBody Map<String, Object> datosCotizacion) {
-        // Obtenemos el peso enviado desde React
-        Double peso = Double.valueOf(datosCotizacion.get("peso").toString());
+        try {
+            Double peso = Double.valueOf(datosCotizacion.get("peso").toString());
+            // Ahora el frontend también debe enviarnos origen y destino
+            String origen = datosCotizacion.get("origen").toString();
+            String destino = datosCotizacion.get("destino").toString();
 
-        // Reglas de negocio de PeruBus
-        double tarifaBaseMinima = 15.0; // Lo mínimo que se cobra por cualquier envío pequeño
-        double costoPorKilo = 5.5; // Costo por kilo
-
-        // El sistema calcula el costo por peso, pero si es menor al mínimo, aplica la
-        // base.
-        double costoEstimado = Math.max(tarifaBaseMinima, peso * costoPorKilo);
-
-        return ResponseEntity.ok(Map.of("costoEstimado", costoEstimado));
+            double costoEstimado = encomiendaService.calcularCotizacion(origen, destino, peso);
+            return ResponseEntity.ok(Map.of("costoEstimado", costoEstimado));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Error en la cotización: " + e.getMessage());
+        }
     }
 
     // ==========================================
-    // CUS-01: REGISTRAR ENCOMIENDA (Sí guarda en BD)
+    // CUS-01: REGISTRAR ENCOMIENDA
     // ==========================================
+    @RequiereRol(Rol.AGENTE)
     @PostMapping("/registrar")
     public ResponseEntity<?> registrarEncomienda(@RequestBody Encomienda encomienda) {
-
-        // 1. Validar Usuario (El ID viene desde React)
-        if (encomienda.getUsuario() != null && encomienda.getUsuario().getIdUsuario() != null) {
-            Usuario usuarioBD = usuarioRepository.findById(encomienda.getUsuario().getIdUsuario())
-                    .orElseThrow(() -> new RuntimeException("Error: El usuario autenticado no existe en la BD."));
-            encomienda.setUsuario(usuarioBD);
-        } else {
-            return ResponseEntity.badRequest().body("Error: Falta el ID del usuario que registra.");
+        try {
+            // Toda la lógica pesada ahora vive en el Service
+            Encomienda encomiendaGuardada = encomiendaService.registrarEncomienda(encomienda);
+            return ResponseEntity.ok(encomiendaGuardada);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
-
-        // 2. Validamos y guardamos el REMITENTE
-        if (encomienda.getRemitente() != null) {
-            Cliente remitente = clienteRepository.findByNumDocumento(encomienda.getRemitente().getNumDocumento())
-                    .orElseGet(() -> clienteRepository.save(encomienda.getRemitente()));
-            encomienda.setRemitente(remitente);
-        }
-
-        // 3. Validamos y guardamos el DESTINATARIO
-        if (encomienda.getDestinatario() != null) {
-            Cliente destinatario = clienteRepository.findByNumDocumento(encomienda.getDestinatario().getNumDocumento())
-                    .orElseGet(() -> clienteRepository.save(encomienda.getDestinatario()));
-            encomienda.setDestinatario(destinatario);
-        }
-
-        // 4. Generar Tracking y Estado Inicial
-        String tracking = "PERU-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
-        encomienda.setCodigoTracking(tracking);
-        encomienda.setEstadoLogistico("En origen");
-
-        // 5. Guardar todo en PostgreSQL (Supabase)
-        Encomienda encomiendaGuardada = encomiendaRepository.save(encomienda);
-
-        return ResponseEntity.ok(encomiendaGuardada);
     }
 
-    // Para ver el historial de encomiendas
+    // ==========================================
+    // CONSULTAS (Get)
+    // ==========================================
     @GetMapping
     public ResponseEntity<?> listarEncomiendas() {
-        return ResponseEntity.ok(encomiendaRepository.findAll());
+        return ResponseEntity.ok(encomiendaRepository.findAll().stream()
+                .map(this::convertirAConsulta)
+                .toList());
+    }
+
+    @GetMapping("/buscar/{codigoTracking}")
+    public ResponseEntity<?> consultarEncomienda(@PathVariable String codigoTracking) {
+        String trackingNormalizado = codigoTracking == null
+                ? ""
+                : codigoTracking.trim().toUpperCase(Locale.ROOT);
+
+        if (!trackingNormalizado.matches("PERU-[A-Z0-9]{8}")) {
+            return ResponseEntity.badRequest().body("El código de tracking no tiene un formato válido.");
+        }
+
+        return encomiendaRepository.findByCodigoTracking(trackingNormalizado)
+                .map(encomienda -> ResponseEntity.ok(convertirAConsulta(encomienda)))
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @RequiereRol(Rol.AGENTE)
+    @PostMapping("/{codigoTracking}/simular-pago")
+    public ResponseEntity<?> simularPago(
+            @PathVariable String codigoTracking,
+            @RequestBody(required = false) Map<String, String> datos) {
+        try {
+            String tipoSolicitado = datos == null ? null : datos.get("tipoComprobante");
+            var comprobante = encomiendaService.simularPago(
+                    codigoTracking.trim().toUpperCase(Locale.ROOT),
+                    tipoSolicitado);
+            var respuestaComprobante = com.perubusSystem.perubus_system.dto.ComprobanteRespuesta.desde(comprobante);
+            return ResponseEntity.ok(Map.of(
+                    "codigoTracking", comprobante.getEncomienda().getCodigoTracking(),
+                    "estadoLogistico", comprobante.getEncomienda().getEstadoLogistico(),
+                    "estadoPago", comprobante.getEstadoPago(),
+                    "tipoComprobante", respuestaComprobante.tipoComprobante(),
+                    "numeroSerie", respuestaComprobante.numeroSerie(),
+                    "subtotal", comprobante.getMontoSubtotal(),
+                    "igv", comprobante.getMontoIgv(),
+                    "total", comprobante.getMontoTotal(),
+                    "fechaEmision", respuestaComprobante.fechaEmision(),
+                    "fechaPago", comprobante.getFechaPago()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("mensaje", e.getMessage()));
+        }
+    }
+
+    @RequiereRol(Rol.OPERARIO)
+    @PostMapping("/{codigoTracking}/confirmar-llegada")
+    public ResponseEntity<?> confirmarLlegada(
+            @PathVariable String codigoTracking,
+            HttpSession session) {
+        Object usuarioId = session.getAttribute("idUsuario");
+        if (!(usuarioId instanceof Long id)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensaje", "Inicia sesión como personal para confirmar la llegada."));
+        }
+        try {
+            Encomienda encomienda = encomiendaService.confirmarLlegada(
+                    codigoTracking.trim().toUpperCase(Locale.ROOT), id);
+            return ResponseEntity.ok(Map.of(
+                    "codigoTracking", encomienda.getCodigoTracking(),
+                    "estadoLogistico", encomienda.getEstadoLogistico()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        }
+    }
+
+    @RequiereRol(Rol.OPERARIO)
+    @PostMapping("/{codigoTracking}/disponible-recojo")
+    public ResponseEntity<?> marcarDisponibleParaRecojo(
+            @PathVariable String codigoTracking,
+            HttpSession session) {
+        Object usuarioId = session.getAttribute("idUsuario");
+        if (!(usuarioId instanceof Long id)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensaje", "Inicia sesión como personal para actualizar el estado."));
+        }
+        try {
+            Encomienda encomienda = encomiendaService.marcarDisponibleParaRecojo(
+                    codigoTracking.trim().toUpperCase(Locale.ROOT), id);
+            return ResponseEntity.ok(Map.of(
+                    "codigoTracking", encomienda.getCodigoTracking(),
+                    "estadoLogistico", encomienda.getEstadoLogistico()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        }
+    }
+
+    @RequiereRol(Rol.OPERARIO)
+    @PostMapping("/{codigoTracking}/iniciar-reparto")
+    public ResponseEntity<?> iniciarReparto(
+            @PathVariable String codigoTracking,
+            HttpSession session) {
+        Object usuarioId = session.getAttribute("idUsuario");
+        if (!(usuarioId instanceof Long id)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensaje", "Inicia sesión como personal para actualizar el estado."));
+        }
+        try {
+            Encomienda encomienda = encomiendaService.iniciarReparto(
+                    codigoTracking.trim().toUpperCase(Locale.ROOT), id);
+            return ResponseEntity.ok(Map.of(
+                    "codigoTracking", encomienda.getCodigoTracking(),
+                    "estadoLogistico", encomienda.getEstadoLogistico()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        }
+    }
+
+    @RequiereRol(Rol.OPERARIO)
+    @PostMapping("/{codigoTracking}/confirmar-entrega")
+    public ResponseEntity<?> confirmarEntrega(
+            @PathVariable String codigoTracking,
+            @RequestBody ConfirmacionEntregaSolicitud solicitud,
+            HttpSession session) {
+        Object usuarioId = session.getAttribute("idUsuario");
+        if (!(usuarioId instanceof Long id)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("mensaje", "Inicia sesión como personal para confirmar la entrega."));
+        }
+        try {
+            if (solicitud == null || solicitud.dniReceptor() == null || solicitud.dniReceptor().isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("mensaje", "El DNI o RUC de la persona que recibe es obligatorio para verificar la entrega."));
+            }
+            Encomienda encomienda = encomiendaService.confirmarEntrega(
+                    codigoTracking.trim().toUpperCase(Locale.ROOT),
+                    id,
+                    solicitud.recibidoPor(),
+                    solicitud.dniReceptor());
+            return ResponseEntity.ok(Map.of(
+                    "codigoTracking", encomienda.getCodigoTracking(),
+                    "estadoLogistico", encomienda.getEstadoLogistico()));
+        } catch (NoSuchElementException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("mensaje", e.getMessage()));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("mensaje", e.getMessage()));
+        }
+    }
+
+    // Métodos DTO privados (Estos se quedan aquí porque son para transformar la
+    // salida del endpoint)
+    private EncomiendaConsulta convertirAConsulta(Encomienda encomienda) {
+        String fechaViaje = encomienda.getManifiesto() == null || encomienda.getManifiesto().getFechaViaje() == null
+                ? null
+                : encomienda.getManifiesto().getFechaViaje().toString();
+        String numeroBus = encomienda.getManifiesto() == null ? null : encomienda.getManifiesto().getNumBus();
+
+        return new EncomiendaConsulta(
+                encomienda.getCodigoTracking(),
+                encomienda.getPeso(),
+                encomienda.getEstadoLogistico(),
+                encomienda.getDescripcion(),
+                encomienda.getTarifaBase(),
+                convertirCliente(encomienda.getRemitente()),
+                convertirCliente(encomienda.getDestinatario()),
+                encomienda.getRuta(),
+                encomienda.getDireccionDestinatario(),
+                fechaViaje,
+                numeroBus,
+                convertirBultos(encomienda));
+    }
+
+    private List<BultoEncomiendaRespuesta> convertirBultos(Encomienda encomienda) {
+        Double pesoOriginal = encomienda.getPesoOriginal() == null
+                ? encomienda.getPeso()
+                : encomienda.getPesoOriginal();
+        List<BultoEncomiendaRespuesta> bultos = new ArrayList<>();
+        bultos.add(new BultoEncomiendaRespuesta(encomienda.getDescripcion(), pesoOriginal, true));
+        bultos.addAll(bultoRepository
+                .findByEncomienda_IdEncomiendaOrderByFechaRegistroAsc(encomienda.getIdEncomienda())
+                .stream()
+                .map(bulto -> new BultoEncomiendaRespuesta(bulto.getDescripcion(), bulto.getPeso(), false))
+                .toList());
+        return bultos;
+    }
+
+    private ClienteResumen convertirCliente(Cliente cliente) {
+        if (cliente == null)
+            return null;
+        return new ClienteResumen(
+                cliente.getNombres(), cliente.getApellidos(),
+                cliente.getNumDocumento(), cliente.getTelefono(), cliente.getCorreo());
     }
 }
