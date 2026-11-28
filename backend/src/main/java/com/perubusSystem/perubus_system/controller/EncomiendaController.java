@@ -11,8 +11,12 @@ import com.perubusSystem.perubus_system.dto.ClienteResumen;
 import com.perubusSystem.perubus_system.dto.BultoEncomiendaRespuesta;
 import com.perubusSystem.perubus_system.dto.ConfirmacionEntregaSolicitud;
 import com.perubusSystem.perubus_system.dto.EncomiendaConsulta;
+import com.perubusSystem.perubus_system.service.CodigoQrService;
+import com.google.zxing.WriterException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -21,6 +25,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
+import java.io.IOException;
 import jakarta.servlet.http.HttpSession;
 
 @RestController
@@ -33,6 +38,9 @@ public class EncomiendaController {
 
     @Autowired
     private EncomiendaService encomiendaService;
+
+    @Autowired
+    private CodigoQrService codigoQrService;
 
     @Autowired
     private BultoEncomiendaRepository bultoRepository;
@@ -94,6 +102,33 @@ public class EncomiendaController {
         return encomiendaRepository.findByCodigoTracking(trackingNormalizado)
                 .map(encomienda -> ResponseEntity.ok(convertirAConsulta(encomienda)))
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @RequiereRol(Rol.AGENTE)
+    @GetMapping("/{codigoTracking}/qr")
+    public ResponseEntity<?> generarCodigoQr(@PathVariable String codigoTracking) {
+        final String tracking;
+        try {
+            tracking = CodigoQrService.normalizarTracking(codigoTracking);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("mensaje", e.getMessage()));
+        }
+
+        if (encomiendaRepository.findByCodigoTracking(tracking).isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("mensaje", "No se encontró la encomienda."));
+        }
+
+        try {
+            byte[] imagen = codigoQrService.generarCodigoQr(tracking);
+            return ResponseEntity.ok()
+                    .contentType(MediaType.IMAGE_PNG)
+                    .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                    .body(imagen);
+        } catch (WriterException | IOException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("mensaje", "No se pudo generar el código QR."));
+        }
     }
 
     @RequiereRol(Rol.AGENTE)

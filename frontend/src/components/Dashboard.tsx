@@ -61,6 +61,9 @@ export default function Dashboard() {
   const [asignando, setAsignando] = useState(false);
   const [manifiestoImprimir, setManifiestoImprimir] = useState<any>(null);
   const [encomiendaImprimir, setEncomiendaImprimir] = useState<any>(null);
+  const [qrEncomiendaUrl, setQrEncomiendaUrl] = useState('');
+  const [qrEncomiendaTracking, setQrEncomiendaTracking] = useState('');
+  const [mostrarModalQr, setMostrarModalQr] = useState(false);
 
   // Estados Comprobantes (Boleta / Factura)
   const [tipoComprobantePago, setTipoComprobantePago] = useState<'BOLETA' | 'FACTURA'>('BOLETA');
@@ -866,9 +869,30 @@ export default function Dashboard() {
     setTimeout(() => window.print(), 150);
   };
 
-  const imprimirEncomienda = (enc?: any) => {
+  const cargarCodigoQr = async (codigoTracking: string, abrirModal = true) => {
+    try {
+      const res = await axios.get(
+        `http://localhost:8080/api/encomiendas/${encodeURIComponent(codigoTracking)}/qr`,
+        { responseType: 'blob', withCredentials: true }
+      );
+      if (qrEncomiendaUrl) URL.revokeObjectURL(qrEncomiendaUrl);
+      const url = URL.createObjectURL(res.data);
+      setQrEncomiendaUrl(url);
+      setQrEncomiendaTracking(codigoTracking);
+      if (abrirModal) setMostrarModalQr(true);
+      return url;
+    } catch (error: any) {
+      alert(error.response?.status === 403
+        ? 'Tu rol no tiene permiso para generar el código QR.'
+        : mensajeDeError(error, 'No se pudo generar el código QR.'));
+      return '';
+    }
+  };
+
+  const imprimirEncomienda = async (enc?: any) => {
     const seleccionada = enc || encomiendaConsultada || resumenRegistrado;
     if (!seleccionada) return;
+    await cargarCodigoQr(seleccionada.codigoTracking, false);
     setManifiestoImprimir(null);
     setComprobanteImprimir(null);
     setComprobanteVista(null);
@@ -1091,6 +1115,7 @@ export default function Dashboard() {
                     <h3 style={{ color: '#1E1E2D' }}>Resumen de encomienda registrada</h3>
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button type="button" onClick={() => imprimirEncomienda(resumenRegistrado)} style={btnSecondary}>Imprimir / PDF</button>
+                       <button type="button" onClick={() => void cargarCodigoQr(resumenRegistrado.codigoTracking)} style={btnLight}>Ver QR</button>
                       <button type="button" onClick={iniciarNuevaEncomienda} style={btnLight}>Nueva encomienda</button>
                     </div>
                   </div>
@@ -1532,6 +1557,7 @@ export default function Dashboard() {
                           </button>
                         )}
                       <button type="button" onClick={() => imprimirEncomienda(encomiendaConsultada)} style={btnSecondary}>Imprimir Guía</button>
+                      <button type="button" onClick={() => void cargarCodigoQr(encomiendaConsultada.codigoTracking)} style={btnLight}>Ver QR</button>
                       {puede(rol, 'gestionar_incidencias') && (
                         <button type="button" onClick={() => abrirReporteIncidencia(encomiendaConsultada.codigoTracking)} style={btnLight}>
                           Reportar incidencia
@@ -1695,6 +1721,16 @@ export default function Dashboard() {
                               title="Reportar incidencia sobre este envío"
                             >
                               Incidencia
+                            </button>
+                          )}
+                          {['ADMIN', 'SUPERVISOR', 'AGENTE'].includes(rol) && (
+                            <button
+                              type="button"
+                              onClick={() => void cargarCodigoQr(enc.codigoTracking)}
+                              style={{ padding: '6px 10px', backgroundColor: '#EEF3FF', color: '#34558A', border: '1px solid #CAD7EE', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+                              title="Mostrar código QR del tracking"
+                            >
+                              Ver QR
                             </button>
                           )}
                           <button
@@ -2323,6 +2359,26 @@ export default function Dashboard() {
         </section>
       </div>
     )}
+    {mostrarModalQr && qrEncomiendaUrl && (
+      <div
+        className="qr-modal-backdrop"
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setMostrarModalQr(false);
+        }}
+      >
+        <section className="qr-modal" role="dialog" aria-modal="true" aria-label={`Código QR de ${qrEncomiendaTracking}`}>
+          <div className="qr-modal-header">
+            <div>
+              <span>Código de seguimiento</span>
+              <h2>{qrEncomiendaTracking}</h2>
+            </div>
+            <button type="button" aria-label="Cerrar código QR" onClick={() => setMostrarModalQr(false)}>×</button>
+          </div>
+          <img src={qrEncomiendaUrl} alt={`Código QR de tracking ${qrEncomiendaTracking}`} />
+        </section>
+      </div>
+    )}
     {incidenciaAResolver && (
       <ConfirmacionModal
         titulo={`Resolver incidencia #${incidenciaAResolver.idIncidencia}`}
@@ -2643,6 +2699,12 @@ export default function Dashboard() {
           <p className="ticket-titulo">COMPROBANTE DE ENCOMIENDA</p>
           <div className="ticket-linea" />
           <p><strong>Tracking:</strong> {reporte.codigoTracking}</p>
+          {qrEncomiendaUrl && qrEncomiendaTracking === reporte.codigoTracking && (
+            <div className="ticket-qr">
+              <img src={qrEncomiendaUrl} alt={`Código QR de ${reporte.codigoTracking}`} />
+              <span>{reporte.codigoTracking}</span>
+            </div>
+          )}
           <p><strong>Estado:</strong> {etiquetaEstadoEncomienda(reporte.estadoLogistico)}</p>
           <p><strong>Fecha de emisión:</strong> {new Date().toLocaleDateString('es-PE')}</p>
           <div className="ticket-linea" />
